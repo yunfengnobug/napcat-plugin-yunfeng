@@ -13,6 +13,7 @@
 import type { OB11Message, OB11PostSendMsg } from 'napcat-types/napcat-onebot';
 import type { NapCatPluginContext } from 'napcat-types/napcat-onebot/network/plugin/types';
 import { pluginState } from '../core/state';
+import { handleCustomApi } from './custom-api-handler';
 
 // ==================== CD 冷却管理 ====================
 
@@ -201,6 +202,10 @@ export async function handleMessage(ctx: NapCatPluginContext, event: OB11Message
         if (messageType === 'group' && groupId) {
             if (!pluginState.canProcessGroup(String(groupId))) return;
         }
+
+        // 自定义 API：不依赖命令前缀，命中规则后请求外部接口并发送
+        const customHandled = await handleCustomApi(ctx, event);
+        if (customHandled) return;
 
         // 检查命令前缀
         const prefix = pluginState.config.commandPrefix || '#yf';

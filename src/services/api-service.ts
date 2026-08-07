@@ -51,6 +51,7 @@ function buildGroupView(
         settingsInitialized: cfg.settingsInitialized,
         features: {
             notify: pluginState.getFeatureFlag(groupId, 'notify'),
+            customApi: pluginState.getFeatureFlag(groupId, 'customApi'),
         },
     };
 }
@@ -68,6 +69,7 @@ function applyGroupPatch(groupId: string, body: Record<string, unknown>): GroupC
         const features = body.features as FeatureFlags;
         const patch: FeatureFlags = {};
         if (typeof features.notify === 'boolean') patch.notify = features.notify;
+        if (typeof features.customApi === 'boolean') patch.customApi = features.customApi;
         if (Object.keys(patch).length > 0) {
             // 改功能前若尚未初始化，先标记为已初始化（以本次写入为准）
             const cur = pluginState.getGroupConfig(groupId);
@@ -215,6 +217,54 @@ export function registerApiRoutes(ctx: NapCatPluginContext): void {
             res.json({ code: 0, message: 'ok' });
         } catch (err) {
             ctx.logger.error('批量更新群配置失败:', err);
+            res.status(500).json({ code: -1, message: String(err) });
+        }
+    });
+
+    // ==================== 好友列表（选自定义 API 目标）====================
+
+    /** 获取好友列表 */
+    router.getNoAuth('/friends', async (_req, res) => {
+        try {
+            const friends = await ctx.actions.call(
+                'get_friend_list',
+                {},
+                ctx.adapterName,
+                ctx.pluginManager.config,
+            ) as Array<{ user_id: number; nickname: string; remark?: string }>;
+            res.json({
+                code: 0,
+                data: (friends || []).map((f) => ({
+                    user_id: f.user_id,
+                    nickname: f.nickname,
+                    remark: f.remark || '',
+                })),
+            });
+        } catch (e) {
+            ctx.logger.error('获取好友列表失败:', e);
+            res.status(500).json({ code: -1, message: String(e) });
+        }
+    });
+
+    // ==================== 自定义 API 规则 ====================
+
+    /** 获取自定义 API 规则列表 */
+    router.getNoAuth('/custom-api/rules', (_req, res) => {
+        res.json({ code: 0, data: pluginState.config.customApiRules || [] });
+    });
+
+    /** 全量保存自定义 API 规则 */
+    router.postNoAuth('/custom-api/rules', async (req, res) => {
+        try {
+            const body = req.body as { rules?: unknown } | undefined;
+            if (!body || !Array.isArray(body.rules)) {
+                return res.status(400).json({ code: -1, message: '参数错误：需要 rules 数组' });
+            }
+            pluginState.updateConfig({ customApiRules: body.rules as import('../types').CustomApiRule[] });
+            ctx.logger.info(`自定义 API 规则已保存 | 数量: ${pluginState.config.customApiRules.length}`);
+            res.json({ code: 0, message: 'ok', data: pluginState.config.customApiRules });
+        } catch (err) {
+            ctx.logger.error('保存自定义 API 规则失败:', err);
             res.status(500).json({ code: -1, message: String(err) });
         }
     });

@@ -15,7 +15,19 @@ import fs from 'fs';
 import path from 'path';
 import type { NapCatPluginContext, PluginLogger } from 'napcat-types/napcat-onebot/network/plugin/types';
 import { DEFAULT_CONFIG } from '../config';
-import type { FeatureFlags, FeatureKey, GroupConfig, PluginConfig } from '../types';
+import type {
+    CustomApiBodyType,
+    CustomApiHttpMethod,
+    CustomApiRule,
+    CustomApiTriggerType,
+    FeatureFlags,
+    FeatureKey,
+    GroupConfig,
+    PluginConfig,
+} from '../types';
+
+const HTTP_METHODS: CustomApiHttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD'];
+const BODY_TYPES: CustomApiBodyType[] = ['none', 'json', 'form', 'multipart', 'raw'];
 
 // ==================== 配置清洗工具 ====================
 
@@ -28,6 +40,71 @@ function generateWebhookSecret(): string {
     return crypto.randomBytes(24).toString('hex');
 }
 
+/** 清洗单条自定义 API 规则 */
+function sanitizeCustomApiRule(raw: unknown): CustomApiRule | null {
+    if (!isObject(raw)) return null;
+    const triggerType = raw.triggerType;
+    if (triggerType !== 'exact' && triggerType !== 'fuzzy' && triggerType !== 'regex') return null;
+
+    const methodRaw = String(raw.method || 'GET').toUpperCase();
+    const method = (HTTP_METHODS.includes(methodRaw as CustomApiHttpMethod)
+        ? methodRaw
+        : 'GET') as CustomApiHttpMethod;
+
+    // 兼容旧配置：仅有 bodyTemplate 且无 bodyType 时，按 POST→json / 其他→none
+    let bodyType: CustomApiBodyType = 'none';
+    if (typeof raw.bodyType === 'string' && BODY_TYPES.includes(raw.bodyType as CustomApiBodyType)) {
+        bodyType = raw.bodyType as CustomApiBodyType;
+    } else if (method === 'POST' || method === 'PUT' || method === 'PATCH') {
+        bodyType = 'json';
+    }
+
+    const id = typeof raw.id === 'string' && raw.id.trim() ? raw.id.trim() : crypto.randomBytes(8).toString('hex');
+    const name = typeof raw.name === 'string' ? raw.name.trim() : '未命名规则';
+    const trigger = typeof raw.trigger === 'string' ? raw.trigger : '';
+    const url = typeof raw.url === 'string' ? raw.url.trim() : '';
+    if (!trigger || !url) return null;
+
+    const headers: Record<string, string> = {};
+    if (isObject(raw.headers)) {
+        for (const [k, v] of Object.entries(raw.headers)) {
+            if (typeof v === 'string') headers[k] = v;
+        }
+    }
+    // 未配置请求头时补常见默认值
+    if (Object.keys(headers).length === 0) {
+        headers.Accept = 'application/json, text/plain, */*';
+        headers['Accept-Language'] = 'zh-CN,zh;q=0.9';
+        headers['User-Agent'] = 'napcat-plugin-yunfeng';
+    }
+
+    const targetGroupIds = Array.isArray(raw.targetGroupIds)
+        ? raw.targetGroupIds.map((x) => String(x).trim()).filter(Boolean)
+        : [];
+    const targetUserIds = Array.isArray(raw.targetUserIds)
+        ? raw.targetUserIds.map((x) => String(x).trim()).filter(Boolean)
+        : [];
+
+    return {
+        id,
+        name: name || '未命名规则',
+        enabled: raw.enabled !== false,
+        triggerType: triggerType as CustomApiTriggerType,
+        trigger,
+        method,
+        url,
+        headers,
+        queryTemplate: typeof raw.queryTemplate === 'string' ? raw.queryTemplate : '',
+        bodyType,
+        bodyTemplate: typeof raw.bodyTemplate === 'string' ? raw.bodyTemplate : '',
+        replyTemplate: typeof raw.replyTemplate === 'string' ? raw.replyTemplate : '{{body}}',
+        // 默认关闭「回复当前会话」
+        replyToCurrent: raw.replyToCurrent === true,
+        targetGroupIds,
+        targetUserIds,
+    };
+}
+
 /**
  * 配置清洗函数
  * 确保从文件读取的配置符合预期类型，防止运行时错误
@@ -38,6 +115,7 @@ function sanitizeConfig(raw: unknown): PluginConfig {
             ...DEFAULT_CONFIG,
             webhookSecret: generateWebhookSecret(),
             featureDefaults: { ...DEFAULT_CONFIG.featureDefaults },
+            customApiRules: [],
             groupConfigs: {},
         };
     }
@@ -45,6 +123,7 @@ function sanitizeConfig(raw: unknown): PluginConfig {
     const out: PluginConfig = {
         ...DEFAULT_CONFIG,
         featureDefaults: { ...DEFAULT_CONFIG.featureDefaults },
+        customApiRules: [],
         groupConfigs: {},
         webhookSecret: '',
     };
@@ -63,6 +142,17 @@ function sanitizeConfig(raw: unknown): PluginConfig {
     if (isObject(raw.featureDefaults)) {
         if (typeof raw.featureDefaults.notify === 'boolean') {
             out.featureDefaults.notify = raw.featureDefaults.notify;
+        }
+        if (typeof raw.featureDefaults.customApi === 'boolean') {
+            out.featureDefaults.customApi = raw.featureDefaults.customApi;
+        }
+    }
+
+    // 自定义 API 规则
+    if (Array.isArray(raw.customApiRules)) {
+        for (const item of raw.customApiRules) {
+            const rule = sanitizeCustomApiRule(item);
+            if (rule) out.customApiRules.push(rule);
         }
     }
 
@@ -88,6 +178,9 @@ function sanitizeConfig(raw: unknown): PluginConfig {
                 if (typeof groupConfig.features.notify === 'boolean') {
                     features.notify = groupConfig.features.notify;
                 }
+                if (typeof groupConfig.features.customApi === 'boolean') {
+                    features.customApi = groupConfig.features.customApi;
+                }
                 cfg.features = features;
             }
             // 已开机但未标记：视为已开启过，用当前全局默认补全缺失功能项（仅迁移一次）
@@ -95,6 +188,7 @@ function sanitizeConfig(raw: unknown): PluginConfig {
                 cfg.settingsInitialized = true;
                 cfg.features = {
                     notify: cfg.features?.notify ?? out.featureDefaults.notify,
+                    customApi: cfg.features?.customApi ?? out.featureDefaults.customApi,
                 };
             }
             out.groupConfigs[groupId] = cfg;

@@ -16,7 +16,9 @@ export const DEFAULT_CONFIG: PluginConfig = {
     /** 新群首次开机时写入的功能初始值（不影响已开启群） */
     featureDefaults: {
         notify: true,
+        customApi: false,
     },
+    customApiRules: [],
     groupConfigs: {},
 };
 
@@ -39,7 +41,7 @@ export function buildConfigSchema(ctx: NapCatPluginContext): PluginConfigSchema 
         ctx.NapCatConfig.html(`
             <div style="padding: 16px; background: #FB7299; border-radius: 12px; margin-bottom: 20px; color: white;">
                 <h3 style="margin: 0 0 6px 0; font-size: 18px; font-weight: 600;">云枫</h3>
-                <p style="margin: 0; font-size: 13px; opacity: 0.85;">群授权 / 开机门禁 · Webhook 通知 · 可扩展多功能</p>
+                <p style="margin: 0; font-size: 13px; opacity: 0.85;">群授权 / 开机门禁 · Webhook 通知 · 自定义 API</p>
             </div>
         `),
         // 启停由 NapCat 插件管理控制，此处不再提供「启用插件」开关
