@@ -4,16 +4,18 @@ import Header from './components/Header'
 import ToastContainer from './components/ToastContainer'
 import StatusPage from './pages/StatusPage'
 import ConfigPage from './pages/ConfigPage'
+import GlobalSettingsPage from './pages/GlobalSettingsPage'
 import GroupsPage from './pages/GroupsPage'
 import { useStatus } from './hooks/useStatus'
 import { useTheme } from './hooks/useTheme'
 
-export type PageId = 'status' | 'config' | 'groups'
+export type PageId = 'status' | 'groups' | 'global' | 'config'
 
 const pageConfig: Record<PageId, { title: string; desc: string }> = {
     status: { title: '仪表盘', desc: '插件运行状态与数据概览' },
-    config: { title: '插件配置', desc: '基础设置与参数配置' },
-    groups: { title: '群管理', desc: '管理群的启用与禁用' }
+    groups: { title: '群管理', desc: '左侧选群，右侧配置授权、开机与功能' },
+    global: { title: '全局设置', desc: '新群首次开机时写入的功能初始值' },
+    config: { title: '插件配置', desc: 'Webhook 密钥与基础参数' },
 }
 
 function App() {
@@ -36,8 +38,9 @@ function App() {
     const renderPage = () => {
         switch (currentPage) {
             case 'status': return <StatusPage status={status} onRefresh={fetchStatus} />
-            case 'config': return <ConfigPage />
             case 'groups': return <GroupsPage />
+            case 'global': return <GlobalSettingsPage />
+            case 'config': return <ConfigPage />
             default: return <StatusPage status={status} onRefresh={fetchStatus} />
         }
     }

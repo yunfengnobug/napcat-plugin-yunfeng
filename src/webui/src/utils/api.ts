@@ -11,7 +11,7 @@ function resolvePluginName(): string {
     if (extMatch) return extMatch[1]
     const pluginMatch = location.pathname.match(/\/plugin\/([^/]+)/)
     if (pluginMatch) return pluginMatch[1]
-    return 'napcat-plugin-template'
+    return 'napcat-plugin-yunfeng'
 }
 
 const PLUGIN_NAME = resolvePluginName()

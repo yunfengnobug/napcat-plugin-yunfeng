@@ -1,11 +1,20 @@
-# NapCat 插件开发模板
+# 云枫（napcat-plugin-yunfeng）
 
-一个快速开始 NapCat 插件开发的模板项目，基于实际生产项目架构提炼而成。
+NapCat 插件：群授权 / 开机门禁为基础，Webhook 通知推群可跑通，后续功能按同一门禁扩展。
+
+## 核心约定
+
+1. **群授权**：每群有 `authExpireAt`（到期时间），可在 WebUI「延长 / 设为」天数
+2. **开机状态**：每群独立开机 / 关机
+3. **门禁**：仅当「全局启用 + 已授权且未过期 + 已开机」时，才处理该群后续功能；否则直接跳过
+4. **全局设置**：单独页面；只影响尚未开启过的群——它们**首次开机**时写入功能初始值；已开启群不受影响
+5. **群管理**：左侧群列表，右侧配置该群的基础（开机/授权）与各功能
+6. **Webhook**：外部后台 POST 通知（不传群号），插件推送到所有「已授权 + 开机 + 开启通知」的群
 
 ## 📁 项目结构
 
 ```
-napcat-plugin-template/
+napcat-plugin-yunfeng/
 ├── src/
 │   ├── index.ts              # 插件入口，导出生命周期函数
 │   ├── config.ts             # 配置定义和 WebUI Schema
@@ -64,24 +73,16 @@ napcat-plugin-template/
 pnpm install
 ```
 
-### 2. 修改插件信息
+### 2. 插件信息
 
-编辑 `package.json`，修改以下字段：
-
-```json
-{
-    "name": "napcat-plugin-your-name",
-    "description": "你的插件描述",
-    "author": "你的名字"
-}
-```
+当前包名：`napcat-plugin-yunfeng`，显示名：云枫。
 
 ### 3. 开发你的功能
 
 - **添加配置项**: 编辑 `src/types.ts` 和 `src/config.ts`
-- **消息处理**: 编辑 `src/handlers/message-handler.ts`
-- **API 路由**: 编辑 `src/services/api-service.ts`
-- **状态管理**: 编辑 `src/core/state.ts`
+- **消息处理**: 编辑 `src/handlers/message-handler.ts`（入口处已做授权/开机门禁）
+- **API / Webhook**: 编辑 `src/services/api-service.ts`
+- **门禁与授权**: 编辑 `src/core/state.ts`（`canProcessGroup` / `isFeatureEnabled`）
 - **WebUI 页面**: 编辑 `src/webui/src/pages/` 下的页面组件
 - **WebUI 类型**: 同步更新 `src/webui/src/types.ts` 中的前端类型
 
@@ -190,9 +191,10 @@ graph TD
 | `plugin_set_config` | 设置配置 |
 | `plugin_on_config_change` | 配置变更回调 |
 
-## 🌐 WebUI API 路由
+## 🌐 WebUI API 与 Webhook
 
-模板使用 **无认证路由**（`router.getNoAuth` / `router.postNoAuth`），适用于插件自带的 WebUI 页面调用。
+插件自带 WebUI 使用 **无认证路由**（`router.getNoAuth` / `router.postNoAuth`）。  
+外部 Webhook 虽走 NoAuth 路径，但**必须校验** `X-Webhook-Secret`。
 
 > NapCat 路由器提供两种注册方式：
 > - `router.get` / `router.post`：需要 NapCat WebUI 登录认证
@@ -200,21 +202,34 @@ graph TD
 
 ### 内置 API 接口
 
+路径前缀：`/plugin/napcat-plugin-yunfeng/api`
+
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/info` | 获取插件信息 |
-| GET | `/status` | 获取运行状态、配置、统计 |
+| GET | `/status` | 运行状态、配置、统计、Webhook 路径 |
 | GET | `/config` | 获取当前配置 |
 | POST | `/config` | 保存配置（合并更新） |
-| GET | `/groups` | 获取群列表（含启用状态） |
-| POST | `/groups/:id/config` | 更新单个群配置 |
-| POST | `/groups/bulk-config` | 批量更新群配置 |
+| GET | `/groups` | 群列表（授权 / 开机 / 功能状态） |
+| POST | `/groups/:id/config` | 单群：`poweredOn` / `features` / `addAuthDays` / `setAuthDays` |
+| POST | `/groups/bulk-config` | 多选批量写入同上字段 |
+| POST | `/webhook/notify` | 外部通知推群（需密钥） |
+
+### Webhook 调用示例
+
+```bash
+curl -X POST "http://<NapCat主机>:<WebUI端口>/plugin/napcat-plugin-yunfeng/api/webhook/notify" \
+  -H "Content-Type: application/json" \
+  -H "X-Webhook-Secret: <配置页中的密钥>" \
+  -d "{\"title\":\"新消息\",\"content\":\"详情内容\",\"url\":\"https://example.com\"}"
+```
+
+不传群号。插件会推送到所有「已授权 + 开机 + 通知开启」的群；返回 `data.sent` / `data.failed`。
 
 ### 前端调用方式
 
 ```javascript
-// 无认证 API 请求
-const url = `/api/plugin/${PLUGIN_NAME}${path}`;
+// 无认证 API 请求（页面内通过 noAuthFetch 封装）
+const url = `/plugin/${PLUGIN_NAME}/api${path}`;
 const res = await fetch(url, {
     headers: { 'Content-Type': 'application/json' },
     ...options

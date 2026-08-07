@@ -7,6 +7,8 @@ alwaysApply: true
 
 依据官方站 <https://napneko.github.io>（源码 [NapCatDocs](https://github.com/NapNeko/NapCatDocs)）。接口参数以 Apifox / MCP 为准，勿凭记忆编造。
 
+**运行时框架**是工作区 `NapCat.Shell`。插件构建/热重载产物部署到 `NapCat.Shell/plugins/`。日常开发不依赖开源源码仓库；升级框架用官方 Shell Release。
+
 ## 生命周期与入口
 
 - 仅 `plugin_init` 必选；卸载/热重载前必须实现 `plugin_cleanup`，释放定时器、连接、监听，否则会泄漏或重复注册

@@ -1,5 +1,5 @@
 {
-    "name": "plugin-template-webui",
+    "name": "napcat-plugin-yunfeng-webui",
     "private": true,
     "version": "1.0.0",
     "type": "module",

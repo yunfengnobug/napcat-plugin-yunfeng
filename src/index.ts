@@ -1,5 +1,5 @@
 /**
- * NapCat 插件模板 - 主入口
+ * 云枫插件 - 主入口
  *
  * 导出 PluginModule 接口定义的生命周期函数，NapCat 加载插件时会调用这些函数。
  *
@@ -15,7 +15,9 @@
  *   plugin_set_config         → 自定义配置保存
  *   plugin_on_config_change   → 配置变更回调
  *
- * @author Your Name
+ * 业务门禁：群消息仅在「已授权且开机」时进入后续处理。
+ *
+ * @author 云枫
  * @license MIT
  */
 
@@ -148,9 +150,9 @@ function registerWebUI(ctx: NapCatPluginContext): void {
     // 访问路径: /plugin/<plugin-id>/page/dashboard
     router.page({
         path: 'dashboard',
-        title: '插件仪表盘',
+        title: '云枫',
         htmlFile: 'webui/index.html',
-        description: '插件管理控制台',
+        description: '群授权 / 开机 / Webhook 通知管理',
     });
 
     ctx.logger.debug('WebUI 路由注册完成');

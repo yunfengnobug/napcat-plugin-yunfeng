@@ -4,6 +4,7 @@ import { showToast } from '../hooks/useToast'
 import type { PluginConfig } from '../types'
 import { IconTerminal } from '../components/icons'
 
+/** 插件基础配置（Webhook 密钥、开关等；功能全局初始值在「全局设置」页） */
 export default function ConfigPage() {
     const [config, setConfig] = useState<PluginConfig | null>(null)
     const [saving, setSaving] = useState(false)
@@ -22,9 +23,10 @@ export default function ConfigPage() {
         setSaving(true)
         try {
             const newConfig = { ...config, ...update }
+            const { webhookPath: _wp, ...payload } = newConfig
             await noAuthFetch('/config', {
                 method: 'POST',
-                body: JSON.stringify(newConfig),
+                body: JSON.stringify(payload),
             })
             setConfig(newConfig)
             showToast('配置已保存', 'success')
@@ -42,6 +44,15 @@ export default function ConfigPage() {
         saveConfig({ [key]: value })
     }
 
+    const copyText = async (text: string) => {
+        try {
+            await navigator.clipboard.writeText(text)
+            showToast('已复制', 'success')
+        } catch {
+            showToast('复制失败，请手动选择', 'warning')
+        }
+    }
+
     if (!config) {
         return (
             <div className="flex items-center justify-center h-64 empty-state">
@@ -53,8 +64,43 @@ export default function ConfigPage() {
         )
     }
 
+    const webhookUrl = config.webhookPath
+        ? `${window.location.origin}${config.webhookPath}`
+        : ''
+
     return (
         <div className="space-y-6 stagger-children">
+            {/* Webhook */}
+            <div className="card p-5 hover-lift">
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2 mb-5">
+                    <IconTerminal size={16} className="text-gray-400" />
+                    Webhook 通知
+                </h3>
+                <div className="space-y-5">
+                    <div>
+                        <div className="text-sm font-medium text-gray-800 dark:text-gray-200 mb-1">推送地址</div>
+                        <div className="text-xs text-gray-400 mb-2">
+                            外部后台 POST 到此地址，无需传群号；插件会推送到所有「已授权 + 开机 + 开启通知」的群
+                        </div>
+                        <div className="flex gap-2">
+                            <input className="input-field font-mono text-xs" readOnly value={webhookUrl} />
+                            <button className="btn btn-ghost text-xs shrink-0" onClick={() => copyText(webhookUrl)}>复制</button>
+                        </div>
+                    </div>
+                    <InputRow
+                        label="Webhook 密钥"
+                        desc="首次启动会自动生成；请妥善保管，泄露后请立即更换"
+                        value={config.webhookSecret || ''}
+                        onChange={(v) => updateField('webhookSecret', v)}
+                    />
+                    <div className="rounded-lg bg-gray-50 dark:bg-white/[0.03] p-3 text-xs text-gray-500 font-mono whitespace-pre-wrap leading-relaxed">
+{`POST ${config.webhookPath || '/plugin/napcat-plugin-yunfeng/api/webhook/notify'}
+Header: X-Webhook-Secret: <密钥>
+Body: { "title": "标题", "content": "详情", "url": "链接" }`}
+                    </div>
+                </div>
+            </div>
+
             {/* 基础配置 */}
             <div className="card p-5 hover-lift">
                 <h3 className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2 mb-5">
@@ -62,12 +108,6 @@ export default function ConfigPage() {
                     基础配置
                 </h3>
                 <div className="space-y-5">
-                    <ToggleRow
-                        label="启用插件"
-                        desc="全局开关，关闭后不响应任何命令"
-                        checked={config.enabled}
-                        onChange={(v) => updateField('enabled', v)}
-                    />
                     <ToggleRow
                         label="调试模式"
                         desc="启用后输出详细日志到控制台"
@@ -87,7 +127,6 @@ export default function ConfigPage() {
                         type="number"
                         onChange={(v) => updateField('cooldownSeconds', Number(v) || 0)}
                     />
-                    {/* TODO: 在这里添加你的配置项 */}
                 </div>
             </div>
 
@@ -100,8 +139,6 @@ export default function ConfigPage() {
         </div>
     )
 }
-
-/* ---- 子组件 ---- */
 
 function ToggleRow({ label, desc, checked, onChange }: {
     label: string; desc: string; checked: boolean; onChange: (v: boolean) => void

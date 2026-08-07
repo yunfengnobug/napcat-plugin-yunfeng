@@ -11,7 +11,8 @@ interface HeaderProps {
 }
 
 export default function Header({ title, description, isScrolled, status, currentPage }: HeaderProps) {
-    const isEnabled = status?.config?.enabled ?? false
+    // 能打开本页即表示插件已由 NapCat 加载
+    const isEnabled = !!status
 
     return (
         <header
@@ -30,7 +31,7 @@ export default function Header({ title, description, isScrolled, status, current
                 <p className="text-gray-400 text-xs mt-0.5">{description}</p>
             </div>
 
-            {currentPage === 'config' ? (
+            {currentPage === 'config' || currentPage === 'global' ? (
                 <div className="header-badge flex items-center gap-2 px-3 py-1.5 bg-white dark:bg-[#1e1e20] rounded-lg border border-gray-200 dark:border-gray-800">
                     <IconSave size={13} className="text-emerald-500" />
                     <span className="text-xs font-medium text-gray-600 dark:text-gray-300">自动保存</span>

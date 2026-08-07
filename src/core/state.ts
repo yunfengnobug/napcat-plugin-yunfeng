@@ -10,11 +10,12 @@
  *   pluginState.ctx.logger.info(...); // 使用日志
  */
 
+import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import type { NapCatPluginContext, PluginLogger } from 'napcat-types/napcat-onebot/network/plugin/types';
 import { DEFAULT_CONFIG } from '../config';
-import type { PluginConfig, GroupConfig } from '../types';
+import type { FeatureFlags, FeatureKey, GroupConfig, PluginConfig } from '../types';
 
 // ==================== 配置清洗工具 ====================
 
@@ -22,33 +23,83 @@ function isObject(v: unknown): v is Record<string, unknown> {
     return v !== null && typeof v === 'object' && !Array.isArray(v);
 }
 
+/** 生成 Webhook 密钥（首次创建配置时使用） */
+function generateWebhookSecret(): string {
+    return crypto.randomBytes(24).toString('hex');
+}
+
 /**
  * 配置清洗函数
  * 确保从文件读取的配置符合预期类型，防止运行时错误
  */
 function sanitizeConfig(raw: unknown): PluginConfig {
-    if (!isObject(raw)) return { ...DEFAULT_CONFIG, groupConfigs: {} };
+    if (!isObject(raw)) {
+        return {
+            ...DEFAULT_CONFIG,
+            webhookSecret: generateWebhookSecret(),
+            featureDefaults: { ...DEFAULT_CONFIG.featureDefaults },
+            groupConfigs: {},
+        };
+    }
 
-    const out: PluginConfig = { ...DEFAULT_CONFIG, groupConfigs: {} };
+    const out: PluginConfig = {
+        ...DEFAULT_CONFIG,
+        featureDefaults: { ...DEFAULT_CONFIG.featureDefaults },
+        groupConfigs: {},
+        webhookSecret: '',
+    };
 
     if (typeof raw.enabled === 'boolean') out.enabled = raw.enabled;
     if (typeof raw.debug === 'boolean') out.debug = raw.debug;
     if (typeof raw.commandPrefix === 'string') out.commandPrefix = raw.commandPrefix;
     if (typeof raw.cooldownSeconds === 'number') out.cooldownSeconds = raw.cooldownSeconds;
+    if (typeof raw.webhookSecret === 'string' && raw.webhookSecret.trim()) {
+        out.webhookSecret = raw.webhookSecret.trim();
+    } else {
+        out.webhookSecret = generateWebhookSecret();
+    }
 
-    // 群配置清洗
-    if (isObject(raw.groupConfigs)) {
-        for (const [groupId, groupConfig] of Object.entries(raw.groupConfigs)) {
-            if (isObject(groupConfig)) {
-                const cfg: GroupConfig = {};
-                if (typeof groupConfig.enabled === 'boolean') cfg.enabled = groupConfig.enabled;
-                // TODO: 在这里添加你的群配置项清洗
-                out.groupConfigs[groupId] = cfg;
-            }
+    // 全局功能默认开关
+    if (isObject(raw.featureDefaults)) {
+        if (typeof raw.featureDefaults.notify === 'boolean') {
+            out.featureDefaults.notify = raw.featureDefaults.notify;
         }
     }
 
-    // TODO: 在这里添加你的配置项清洗逻辑
+    // 群配置清洗（兼容旧字段 enabled → poweredOn）
+    if (isObject(raw.groupConfigs)) {
+        for (const [groupId, groupConfig] of Object.entries(raw.groupConfigs)) {
+            if (!isObject(groupConfig)) continue;
+            const cfg: GroupConfig = {};
+            if (typeof groupConfig.poweredOn === 'boolean') {
+                cfg.poweredOn = groupConfig.poweredOn;
+            } else if (typeof groupConfig.enabled === 'boolean') {
+                // 旧模板字段兼容
+                cfg.poweredOn = groupConfig.enabled;
+            }
+            if (typeof groupConfig.authExpireAt === 'number') {
+                cfg.authExpireAt = groupConfig.authExpireAt;
+            }
+            if (typeof groupConfig.settingsInitialized === 'boolean') {
+                cfg.settingsInitialized = groupConfig.settingsInitialized;
+            }
+            if (isObject(groupConfig.features)) {
+                const features: FeatureFlags = {};
+                if (typeof groupConfig.features.notify === 'boolean') {
+                    features.notify = groupConfig.features.notify;
+                }
+                cfg.features = features;
+            }
+            // 已开机但未标记：视为已开启过，用当前全局默认补全缺失功能项（仅迁移一次）
+            if (cfg.poweredOn && !cfg.settingsInitialized) {
+                cfg.settingsInitialized = true;
+                cfg.features = {
+                    notify: cfg.features?.notify ?? out.featureDefaults.notify,
+                };
+            }
+            out.groupConfigs[groupId] = cfg;
+        }
+    }
 
     return out;
 }
@@ -60,7 +111,11 @@ class PluginState {
     private _ctx: NapCatPluginContext | null = null;
 
     /** 插件配置 */
-    config: PluginConfig = { ...DEFAULT_CONFIG };
+    config: PluginConfig = {
+        ...DEFAULT_CONFIG,
+        featureDefaults: { ...DEFAULT_CONFIG.featureDefaults },
+        groupConfigs: {},
+    };
 
     /** 插件启动时间戳 */
     startTime: number = 0;
@@ -76,6 +131,8 @@ class PluginState {
         processed: 0,
         todayProcessed: 0,
         lastUpdateDay: new Date().toDateString(),
+        /** Webhook 通知成功次数 */
+        notifySent: 0,
     };
 
     /** 获取上下文（确保已初始化） */
@@ -112,10 +169,10 @@ class PluginState {
             ) as { user_id?: number | string };
             if (res?.user_id) {
                 this.selfId = String(res.user_id);
-                this.logger.debug("(｡·ω·｡) 机器人 QQ: " + this.selfId);
+                this.logger.debug('机器人 QQ: ' + this.selfId);
             }
         } catch (e) {
-            this.logger.warn("(；′⌒`) 获取机器人 QQ 号失败:", e);
+            this.logger.warn('获取机器人 QQ 号失败:', e);
         }
     }
 
@@ -126,7 +183,7 @@ class PluginState {
         // 清理所有定时器
         for (const [jobId, timer] of this.timers) {
             clearInterval(timer);
-            this.logger.debug(`(｡-ω-) 清理定时器: ${jobId}`);
+            this.logger.debug(`清理定时器: ${jobId}`);
         }
         this.timers.clear();
         this.saveConfig();
@@ -163,7 +220,7 @@ class PluginState {
                 return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
             }
         } catch (e) {
-            this.logger.warn("(；′⌒`) 读取数据文件 " + filename + " 失败:", e);
+            this.logger.warn('读取数据文件 ' + filename + ' 失败:', e);
         }
         return defaultValue;
     }
@@ -178,7 +235,7 @@ class PluginState {
         try {
             fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
         } catch (e) {
-            this.logger.error("(╥﹏╥) 保存数据文件 " + filename + " 失败:", e);
+            this.logger.error('保存数据文件 ' + filename + ' 失败:', e);
         }
     }
 
@@ -199,13 +256,13 @@ class PluginState {
                 }
                 this.ctx.logger.debug('已加载本地配置');
             } else {
-                this.config = { ...DEFAULT_CONFIG, groupConfigs: {} };
+                this.config = sanitizeConfig(null);
                 this.saveConfig();
                 this.ctx.logger.debug('配置文件不存在，已创建默认配置');
             }
         } catch (error) {
             this.ctx.logger.error('加载配置失败，使用默认配置:', error);
-            this.config = { ...DEFAULT_CONFIG, groupConfigs: {} };
+            this.config = sanitizeConfig(null);
         }
     }
 
@@ -231,7 +288,17 @@ class PluginState {
      * 合并更新配置
      */
     updateConfig(partial: Partial<PluginConfig>): void {
-        this.config = { ...this.config, ...partial };
+        const next = { ...this.config, ...partial };
+        if (partial.featureDefaults) {
+            next.featureDefaults = {
+                ...this.config.featureDefaults,
+                ...partial.featureDefaults,
+            };
+        }
+        if (partial.groupConfigs) {
+            next.groupConfigs = partial.groupConfigs;
+        }
+        this.config = sanitizeConfig(next);
         this.saveConfig();
     }
 
@@ -247,18 +314,131 @@ class PluginState {
      * 更新指定群的配置
      */
     updateGroupConfig(groupId: string, config: Partial<GroupConfig>): void {
-        this.config.groupConfigs[groupId] = {
-            ...this.config.groupConfigs[groupId],
-            ...config,
-        };
+        const prev = this.config.groupConfigs[groupId] || {};
+        const next: GroupConfig = { ...prev, ...config };
+        if (config.features) {
+            next.features = { ...prev.features, ...config.features };
+        }
+        this.config.groupConfigs[groupId] = next;
         this.saveConfig();
     }
 
     /**
-     * 检查群是否启用（默认启用，除非明确设置为 false）
+     * 设置群开机/关机
+     * 首次开机且尚未应用过全局设置时：把 featureDefaults 快照写入该群，之后改全局不再影响它
      */
-    isGroupEnabled(groupId: string): boolean {
-        return this.config.groupConfigs[groupId]?.enabled !== false;
+    setGroupPoweredOn(groupId: string, poweredOn: boolean): void {
+        const prev = this.config.groupConfigs[groupId] || {};
+        const wasOn = prev.poweredOn === true;
+        const initialized = prev.settingsInitialized === true;
+
+        if (poweredOn && !wasOn && !initialized) {
+            this.updateGroupConfig(groupId, {
+                poweredOn: true,
+                settingsInitialized: true,
+                features: { ...this.config.featureDefaults },
+            });
+            return;
+        }
+
+        this.updateGroupConfig(groupId, { poweredOn });
+    }
+
+    // ==================== 群授权 / 开机 / 功能门禁 ====================
+
+    /** 读取群配置（带默认值视图） */
+    getGroupConfig(groupId: string): Required<Pick<GroupConfig, 'poweredOn' | 'authExpireAt' | 'settingsInitialized'>> & {
+        features: FeatureFlags;
+    } {
+        const g = this.config.groupConfigs[groupId] || {};
+        return {
+            poweredOn: g.poweredOn === true,
+            authExpireAt: typeof g.authExpireAt === 'number' ? g.authExpireAt : 0,
+            settingsInitialized: g.settingsInitialized === true,
+            features: g.features || {},
+        };
+    }
+
+    /** 群是否仍在授权期内 */
+    isGroupAuthorized(groupId: string): boolean {
+        const expireAt = this.getGroupConfig(groupId).authExpireAt;
+        return expireAt > Date.now();
+    }
+
+    /** 群是否开机 */
+    isGroupPoweredOn(groupId: string): boolean {
+        return this.getGroupConfig(groupId).poweredOn;
+    }
+
+    /**
+     * 群是否可处理业务：全局启用 + 已授权 + 已开机
+     * 未满足时后续功能应直接跳过，不响应该群
+     */
+    canProcessGroup(groupId: string): boolean {
+        if (!this.config.enabled) return false;
+        return this.isGroupAuthorized(groupId) && this.isGroupPoweredOn(groupId);
+    }
+
+    /**
+     * 读取某功能对该群的开关值（不含授权/开机门禁）
+     * - 已开启过（settingsInitialized）：以群内快照为准
+     * - 尚未开启：返回全局初始值（仅作预览，改全局会影响下次首次开机）
+     */
+    getFeatureFlag(groupId: string, feature: FeatureKey): boolean {
+        const g = this.getGroupConfig(groupId);
+        if (g.settingsInitialized) {
+            return g.features[feature] === true;
+        }
+        return this.config.featureDefaults[feature] === true;
+    }
+
+    /**
+     * 某功能是否对该群生效（先过授权/开机门禁，再查功能开关）
+     */
+    isFeatureEnabled(groupId: string, feature: FeatureKey): boolean {
+        if (!this.canProcessGroup(groupId)) return false;
+        return this.getFeatureFlag(groupId, feature);
+    }
+
+    /** 列出当前应对某功能生效的群号（已授权 + 开机 + 功能开） */
+    listFeatureTargetGroupIds(feature: FeatureKey): string[] {
+        const ids = new Set<string>();
+        for (const groupId of Object.keys(this.config.groupConfigs)) {
+            if (this.isFeatureEnabled(groupId, feature)) ids.add(groupId);
+        }
+        return Array.from(ids);
+    }
+
+    /**
+     * 调整授权：从「当前到期时间与现在取较大者」起延长 days 天
+     * 未授权或已过期时从现在起算
+     */
+    addAuthDays(groupId: string, days: number): number {
+        const safeDays = Math.max(0, Math.floor(days));
+        const now = Date.now();
+        const current = this.getGroupConfig(groupId).authExpireAt;
+        const base = current > now ? current : now;
+        const authExpireAt = base + safeDays * 24 * 60 * 60 * 1000;
+        this.updateGroupConfig(groupId, { authExpireAt });
+        return authExpireAt;
+    }
+
+    /**
+     * 设置授权：从现在起共 days 天（days=0 表示立即取消授权）
+     */
+    setAuthDays(groupId: string, days: number): number {
+        const safeDays = Math.max(0, Math.floor(days));
+        const authExpireAt = safeDays === 0 ? 0 : Date.now() + safeDays * 24 * 60 * 60 * 1000;
+        this.updateGroupConfig(groupId, { authExpireAt });
+        return authExpireAt;
+    }
+
+    /** 校验 Webhook 密钥 */
+    verifyWebhookSecret(provided: string | undefined | null): boolean {
+        const expected = this.config.webhookSecret;
+        if (!expected) return false;
+        if (!provided) return false;
+        return provided === expected;
     }
 
     // ==================== 统计 ====================
@@ -274,6 +454,12 @@ class PluginState {
         }
         this.stats.todayProcessed++;
         this.stats.processed++;
+    }
+
+    /** 增加通知发送计数 */
+    incrementNotifySent(): void {
+        this.stats.notifySent = (this.stats.notifySent || 0) + 1;
+        this.incrementProcessed();
     }
 
     // ==================== 工具方法 ====================

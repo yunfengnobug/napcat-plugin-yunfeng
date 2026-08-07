@@ -1,21 +1,23 @@
 {
-  "name": "napcat-plugin-template",
-  "plugin": "插件模板",
+  "name": "napcat-plugin-yunfeng",
+  "plugin": "云枫",
   "version": "1.0.0",
   "type": "module",
   "main": "index.mjs",
-  "description": "NapCat 插件开发模板 - 快速开始你的插件开发",
-  "author": "Your Name",
+  "description": "云枫 — 群授权/开机门禁与 Webhook 通知等可扩展能力",
+  "author": "云枫",
   "license": "MIT",
   "keywords": [
     "napcat",
     "plugin",
     "qq",
-    "template"
+    "yunfeng",
+    "webhook"
   ],
   "napcat": {
     "tags": [
-      "工具"
+      "工具",
+      "通知"
     ],
     "minVersion": "4.14.0",
     "homepage": ""
