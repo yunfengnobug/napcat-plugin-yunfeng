@@ -331,7 +331,8 @@ async function dispatchReply(
 }
 
 /**
- * 处理自定义 API：按规则顺序匹配，命中一条即执行（避免一条消息打爆多个接口）
+ * 处理自定义 API：按规则顺序匹配并请求外部接口
+ * oncePerMessage 为 true（默认）时，一条消息只调用命中的第一条规则
  * @returns 是否已处理
  */
 export async function handleCustomApi(
@@ -350,7 +351,10 @@ export async function handleCustomApi(
         return false;
     }
 
+    const oncePerMessage = pluginState.config.customApiOncePerMessage !== false;
     const rules = pluginState.config.customApiRules || [];
+    let handled = false;
+
     for (const rule of rules) {
         if (!rule.enabled) continue;
 
@@ -369,12 +373,14 @@ export async function handleCustomApi(
             );
             await dispatchReply(ctx, event, rule, reply);
             pluginState.incrementProcessed();
-            return true;
+            handled = true;
+            if (oncePerMessage) return true;
         } catch (e) {
             pluginState.logger.error(`自定义 API 执行失败「${rule.name}」:`, e);
-            return true;
+            handled = true;
+            if (oncePerMessage) return true;
         }
     }
 
-    return false;
+    return handled;
 }

@@ -21,8 +21,8 @@ import type {
     NapCatPluginContext,
 } from 'napcat-types/napcat-onebot/network/plugin/types';
 import type { OB11PostSendMsg } from 'napcat-types/napcat-onebot';
-import { pluginState } from '../core/state';
-import type { FeatureFlags, GroupConfig, NotifyWebhookBody, PluginConfig } from '../types';
+import { pluginState, sanitizeCustomApiRule } from '../core/state';
+import type { CustomApiRule, FeatureFlags, GroupConfig, NotifyWebhookBody, PluginConfig } from '../types';
 
 /** 格式化授权到期时间展示 */
 function formatExpireAt(ts: number): string {
@@ -248,21 +248,53 @@ export function registerApiRoutes(ctx: NapCatPluginContext): void {
 
     // ==================== 自定义 API 规则 ====================
 
-    /** 获取自定义 API 规则列表 */
+    /** 获取自定义 API 规则列表（附带 oncePerMessage） */
     router.getNoAuth('/custom-api/rules', (_req, res) => {
-        res.json({ code: 0, data: pluginState.config.customApiRules || [] });
+        res.json({
+            code: 0,
+            data: {
+                rules: pluginState.config.customApiRules || [],
+                oncePerMessage: pluginState.config.customApiOncePerMessage !== false,
+            },
+        });
     });
 
-    /** 全量保存自定义 API 规则 */
+    /** 全量保存自定义 API 规则（触发内容/URL 必填，失败不写盘） */
     router.postNoAuth('/custom-api/rules', async (req, res) => {
         try {
-            const body = req.body as { rules?: unknown } | undefined;
+            const body = req.body as { rules?: unknown; oncePerMessage?: unknown } | undefined;
             if (!body || !Array.isArray(body.rules)) {
                 return res.status(400).json({ code: -1, message: '参数错误：需要 rules 数组' });
             }
-            pluginState.updateConfig({ customApiRules: body.rules as import('../types').CustomApiRule[] });
+
+            const cleaned: CustomApiRule[] = [];
+            const errors: string[] = [];
+            body.rules.forEach((item, index) => {
+                const result = sanitizeCustomApiRule(item);
+                if (result.ok) cleaned.push(result.rule);
+                else errors.push(`第 ${index + 1} 条：${result.error}`);
+            });
+            if (errors.length > 0) {
+                return res.status(400).json({
+                    code: -1,
+                    message: errors.join('；'),
+                });
+            }
+
+            const patch: Partial<PluginConfig> = { customApiRules: cleaned };
+            if (typeof body.oncePerMessage === 'boolean') {
+                patch.customApiOncePerMessage = body.oncePerMessage;
+            }
+            pluginState.updateConfig(patch);
             ctx.logger.info(`自定义 API 规则已保存 | 数量: ${pluginState.config.customApiRules.length}`);
-            res.json({ code: 0, message: 'ok', data: pluginState.config.customApiRules });
+            res.json({
+                code: 0,
+                message: 'ok',
+                data: {
+                    rules: pluginState.config.customApiRules,
+                    oncePerMessage: pluginState.config.customApiOncePerMessage !== false,
+                },
+            });
         } catch (err) {
             ctx.logger.error('保存自定义 API 规则失败:', err);
             res.status(500).json({ code: -1, message: String(err) });

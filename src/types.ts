@@ -110,6 +110,11 @@ export interface PluginConfig {
     featureDefaults: Required<FeatureFlags>;
     /** 自定义 API 规则列表（全局配置，群侧用功能开关控制是否响应） */
     customApiRules: CustomApiRule[];
+    /**
+     * 自定义 API：一条消息命中多条规则时是否只调用一次（按规则顺序取第一条）
+     * 默认 true
+     */
+    customApiOncePerMessage: boolean;
     /** 按群的单独配置 */
     groupConfigs: Record<string, GroupConfig>;
 }
