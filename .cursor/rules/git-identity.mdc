@@ -1,0 +1,33 @@
+---
+description: 提交前强制校验并切换个人 Git 身份（云枫）
+alwaysApply: true
+---
+
+# Git 提交身份校验
+
+每次 `git commit` 前检查全局身份是否为：
+
+| 项 | 期望值 |
+|----|--------|
+| `user.name` | `云枫` |
+| `user.email` | `1768669274@qq.com` |
+
+```bash
+git config --global user.name
+git config --global user.email
+```
+
+不一致时：
+
+1. 执行 `personal`
+2. 再读一次确认
+3. 若仍失败，执行：
+
+```bash
+git config --global user.name "云枫"
+git config --global user.email "1768669274@qq.com"
+```
+
+4. 确认后再 commit / push
+
+仅修正上述两项，不改其他 git 配置。
