@@ -71,11 +71,9 @@ function sanitizeCustomApiRule(raw: unknown): CustomApiRule | null {
             if (typeof v === 'string') headers[k] = v;
         }
     }
-    // 未配置请求头时补常见默认值
+    // 未配置请求头时补默认 Content-Type
     if (Object.keys(headers).length === 0) {
-        headers.Accept = 'application/json, text/plain, */*';
-        headers['Accept-Language'] = 'zh-CN,zh;q=0.9';
-        headers['User-Agent'] = 'napcat-plugin-yunfeng';
+        headers['Content-Type'] = 'application/json';
     }
 
     const targetGroupIds = Array.isArray(raw.targetGroupIds)
@@ -97,7 +95,7 @@ function sanitizeCustomApiRule(raw: unknown): CustomApiRule | null {
         queryTemplate: typeof raw.queryTemplate === 'string' ? raw.queryTemplate : '',
         bodyType,
         bodyTemplate: typeof raw.bodyTemplate === 'string' ? raw.bodyTemplate : '',
-        replyTemplate: typeof raw.replyTemplate === 'string' ? raw.replyTemplate : '{{body}}',
+        replyTemplate: typeof raw.replyTemplate === 'string' ? raw.replyTemplate : '{{res}}',
         // 默认关闭「回复当前会话」
         replyToCurrent: raw.replyToCurrent === true,
         targetGroupIds,

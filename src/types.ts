@@ -74,6 +74,7 @@ export interface CustomApiRule {
     bodyTemplate?: string;
     /**
      * 话术模板
+     * 接口返回对象为 res：{{res}} / {{res.字段}}
      * 正则捕获：整段 {{match}}；第 n 个括号 {{match1}}…；命名分组 (?&lt;city&gt;…) → {{city}}
      */
     replyTemplate: string;

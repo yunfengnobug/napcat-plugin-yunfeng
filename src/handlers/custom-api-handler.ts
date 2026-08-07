@@ -111,7 +111,7 @@ function valueToText(v: unknown): string {
 /**
  * 渲染模板占位符
  * 支持：{{msg}} {{user_id}} {{group_id}} {{nickname}} {{match}} {{match1}} {{命名组}}
- *      {{body}} {{json}} {{data.xxx}}
+ *      接口返回对象 {{res}} / {{res.字段}}（兼容旧写法 {{body}} {{json}}）
  */
 function renderTemplate(
     template: string,
@@ -120,6 +120,17 @@ function renderTemplate(
     responseText: string,
 ): string {
     return template.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_all, key: string) => {
+        // 接口返回：整段对象 / 字段路径
+        if (key === 'res') {
+            return responseJson !== undefined && responseJson !== null
+                ? valueToText(responseJson)
+                : responseText;
+        }
+        if (key.startsWith('res.')) {
+            const fromRes = getByPath(responseJson, key.slice(4));
+            return fromRes !== undefined ? valueToText(fromRes) : '';
+        }
+        // 兼容旧占位符
         if (key === 'body' || key === 'text') return responseText;
         if (key === 'json') {
             try {
@@ -197,10 +208,7 @@ async function callExternalApi(
         url = appendQuery(url, query);
     }
 
-    const headers: Record<string, string> = {
-        'User-Agent': 'napcat-plugin-yunfeng',
-        ...(rule.headers || {}),
-    };
+    const headers: Record<string, string> = { ...(rule.headers || {}) };
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
@@ -354,7 +362,7 @@ export async function handleCustomApi(
             pluginState.logger.info(`自定义 API 命中规则「${rule.name}」`);
             const { text, json } = await callExternalApi(rule, vars);
             const reply = renderTemplate(
-                rule.replyTemplate || '{{body}}',
+                rule.replyTemplate || '{{res}}',
                 vars,
                 json,
                 text,

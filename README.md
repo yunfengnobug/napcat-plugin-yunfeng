@@ -12,9 +12,12 @@ NapCat 插件：群授权 / 开机门禁为基础，Webhook 通知推群可跑�
 6. **Webhook 通知**：外部后台 POST 通知（不传群号），插件推送到所有「已授权 + 开机 + 开启通知」的群
 7. **自定义 API**：消息按精确词 / 模糊词 / 正则触发 → 插件请求外部接口 → 按模板拼话术 → 发到指定群/好友（群侧需开启该功能）
    - 请求：GET/POST/PUT/PATCH/DELETE/HEAD；Query；Body 支持 JSON / form-urlencoded / multipart / raw
-   - 新建规则默认请求头：`Accept` / `Accept-Language` / `User-Agent`（也可自行改）
-   - 「回复当前会话」默认关闭；开启时若又勾选了同一群/好友，不会重复发送
-   - 正则变量：`{{match}}`、`{{match1}}`…；命名分组 `(?<city>…)` → `{{city}}`
+   - 新建规则默认请求头：`Content-Type: application/json`（也可自行改）
+   - 模板变量（可写在 URL / Query / Body / 话术）：
+     - `{{msg}}`：用户触发时的整条原始消息
+     - `{{user_id}}`：发送者 QQ；`{{group_id}}`：群号（私聊为空）；`{{nickname}}`：发送者昵称
+     - `{{res}}`：接口返回的整个对象；`{{res.字段}}`：取返回字段（支持 `{{res.data.x}}` 嵌套）
+     - 正则：`{{match}}` 整段匹配；`{{match1}}`… 第 n 个捕获组；`(?<city>…)` → `{{city}}`
 
 ## 📁 项目结构
 

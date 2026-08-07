@@ -11,11 +11,9 @@ import type {
 } from '../types'
 import { IconTrash, IconX } from '../components/icons'
 
-/** 新建规则时的默认请求头（常见 JSON API 客户端） */
+/** 新建规则时的默认请求头 */
 const DEFAULT_HEADERS: Record<string, string> = {
-    Accept: 'application/json, text/plain, */*',
-    'Accept-Language': 'zh-CN,zh;q=0.9',
-    'User-Agent': 'napcat-plugin-yunfeng',
+    'Content-Type': 'application/json',
 }
 
 function newRule(): CustomApiRule {
@@ -31,7 +29,7 @@ function newRule(): CustomApiRule {
         queryTemplate: '{\n  "q": "{{msg}}"\n}',
         bodyType: 'none',
         bodyTemplate: '{\n  "msg": "{{msg}}",\n  "user_id": "{{user_id}}"\n}',
-        replyTemplate: '{{data.message}}',
+        replyTemplate: '{{res.message}}',
         replyToCurrent: false,
         targetGroupIds: [],
         targetUserIds: [],
@@ -42,6 +40,26 @@ const triggerLabel: Record<CustomApiTriggerType, string> = {
     exact: '精确',
     fuzzy: '模糊',
     regex: '正则',
+}
+
+/**
+ * 请求参数形态（下拉「请求体类型」）
+ * - query：拼 URL 查询串，bodyType=none
+ * - 其余：对应 bodyType，GET/HEAD 不可选
+ */
+type PayloadKind = 'query' | Exclude<CustomApiBodyType, 'none'>
+
+/** 按请求方法给出默认参数形态：GET→query，POST 等→json */
+function defaultPayloadKind(method: CustomApiHttpMethod): PayloadKind {
+    return method === 'GET' || method === 'HEAD' ? 'query' : 'json'
+}
+
+/** 从规则推导当前下拉值 */
+function payloadKindFromRule(rule: CustomApiRule): PayloadKind {
+    if (rule.bodyType === 'none' || rule.method === 'GET' || rule.method === 'HEAD') {
+        return 'query'
+    }
+    return rule.bodyType
 }
 
 /** 尝试格式化 JSON 文本，失败则原样返回并提示 */
@@ -196,10 +214,10 @@ export default function CustomApiPage() {
         showToast('已格式化', 'success')
     }
 
-    const showBodyEditor = editing
-        && editing.bodyType !== 'none'
-        && editing.method !== 'GET'
-        && editing.method !== 'HEAD'
+    const payloadKind = editing ? payloadKindFromRule(editing) : 'query'
+    const bodyAllowed = editing
+        ? editing.method !== 'GET' && editing.method !== 'HEAD'
+        : false
 
     if (loading) {
         return (
@@ -214,306 +232,350 @@ export default function CustomApiPage() {
 
     return (
         <div className="space-y-4">
-            <div className="rounded-lg border border-sky-200/60 dark:border-sky-500/20 bg-sky-50/80 dark:bg-sky-500/5 px-4 py-3 text-xs text-sky-900 dark:text-sky-100/90 leading-relaxed space-y-1.5">
-                <p>消息命中后请求外部接口，按模板拼话术发送。群聊需在「群管理」开启本功能。</p>
-                <p>
-                    常用变量：
-                    <code className="mx-1">{'{{msg}}'}</code>
-                    <code className="mx-1">{'{{user_id}}'}</code>
-                    <code className="mx-1">{'{{group_id}}'}</code>
-                    <code className="mx-1">{'{{body}}'}</code>
-                    <code className="mx-1">{'{{data.字段}}'}</code>
-                </p>
-                <p>
-                    正则变量：整段
-                    <code className="mx-1">{'{{match}}'}</code>
-                    ；第 n 个括号
-                    <code className="mx-1">{'{{match1}}'}</code>
-                    <code className="mx-1">{'{{match2}}'}</code>…
-                    ；命名分组
-                    <code className="mx-1">{'(?<city>.+)'}</code>
-                    →
-                    <code className="mx-1">{'{{city}}'}</code>
-                </p>
-            </div>
+            {/* 变量说明：默认收起，点右侧按钮展开 */}
+            <details className="group rounded-xl border border-gray-200/80 dark:border-gray-700/80 bg-white dark:bg-[#1e1e20] overflow-hidden">
+                <summary className="cursor-pointer select-none px-3 py-2.5 flex items-center justify-between gap-3 list-none [&::-webkit-details-marker]:hidden">
+                    <div className="min-w-0">
+                        <div className="text-sm font-medium text-gray-800 dark:text-gray-100">变量说明</div>
+                        <div className="text-[11px] text-gray-400 mt-0.5 truncate">
+                            占位符可用于 URL / Query / Body / 话术（msg、res、正则捕获等）
+                        </div>
+                    </div>
+                    <span
+                        className="shrink-0 inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium
+                            border border-primary/40 bg-primary/10 text-primary
+                            group-open:bg-primary group-open:text-white group-open:border-primary
+                            hover:bg-primary/20 group-open:hover:bg-primary/90 transition-colors"
+                    >
+                        <span className="group-open:hidden">展开</span>
+                        <span className="hidden group-open:inline">收起</span>
+                        <span className="text-[10px] leading-none group-open:rotate-180 transition-transform">▾</span>
+                    </span>
+                </summary>
+                <div className="px-4 pb-3.5 pt-3 text-xs text-gray-600 dark:text-gray-300 leading-relaxed border-t border-gray-100 dark:border-gray-800/80 grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <VarGroup title="消息相关">
+                        <VarItem name="{{msg}}" desc="触发时的整条原始消息" />
+                        <VarItem name="{{user_id}}" desc="发送者 QQ 号" />
+                        <VarItem name="{{group_id}}" desc="群号（私聊为空）" />
+                        <VarItem name="{{nickname}}" desc="发送者昵称" />
+                    </VarGroup>
+                    <VarGroup title="接口返回">
+                        <VarItem name="{{res}}" desc="返回的整个对象（JSON 字符串）" />
+                        <VarItem name="{{res.字段}}" desc="取字段，支持嵌套路径" />
+                        <VarItem name="{{res.data.x}}" desc="嵌套示例" />
+                    </VarGroup>
+                    <VarGroup title="正则触发">
+                        <VarItem name="{{match}}" desc="匹配到的整段文本" />
+                        <VarItem name="{{match1}}" desc="第 1 个捕获组，以此类推" />
+                        <VarItem name="(?<city>…) → {{city}}" desc="命名分组" />
+                    </VarGroup>
+                </div>
+            </details>
 
             <div className="flex flex-wrap items-center gap-2">
                 <button className="btn btn-primary text-xs" onClick={addRule}>新增规则</button>
                 <button className="btn btn-ghost text-xs" onClick={saveAll} disabled={saving}>
                     {saving ? '保存中...' : '保存全部'}
                 </button>
-                <span className="text-xs text-gray-400">共 {rules.length} 条</span>
+                <span className="text-xs text-gray-400 ml-1">共 {rules.length} 条</span>
             </div>
 
             <div className="flex flex-col lg:flex-row gap-4 min-h-[480px]">
                 {/* 左侧列表：启用开关 + 删除确认 */}
-                <div className="w-full lg:w-[300px] shrink-0 card divide-y divide-gray-50 dark:divide-gray-800/50 overflow-y-auto max-h-[60vh]">
-                    {rules.map((r) => (
-                        <div
-                            key={r.id}
-                            className={`px-3 py-2.5 cursor-pointer ${
-                                editingId === r.id
-                                    ? 'bg-primary/10 border-l-2 border-primary'
-                                    : 'hover:bg-gray-50/80 dark:hover:bg-white/[0.03] border-l-2 border-transparent'
-                            }`}
-                            onClick={() => setEditingId(r.id)}
-                        >
-                            <div className="flex items-center gap-2">
-                                <div className="min-w-0 flex-1">
-                                    <div className="text-sm font-medium truncate">{r.name}</div>
-                                    <div className="text-[11px] text-gray-400 mt-0.5 truncate">
-                                        {triggerLabel[r.triggerType]} · {r.trigger || '(未填触发)'}
+                <div className="w-full lg:w-[300px] shrink-0 card !shadow-none hover:!transform-none hover:!shadow-none overflow-hidden flex flex-col max-h-[60vh]">
+                    <div className="px-3 py-2.5 text-xs font-medium text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-gray-800 bg-gray-50/70 dark:bg-white/[0.02] shrink-0">
+                        规则列表
+                    </div>
+                    <div className="overflow-y-auto flex-1 divide-y divide-gray-100/80 dark:divide-gray-800/60">
+                        {rules.map((r) => (
+                            <div
+                                key={r.id}
+                                className={`px-3 py-2.5 cursor-pointer transition-colors border-l-2 ${
+                                    editingId === r.id
+                                        ? 'bg-primary/[0.08] border-primary'
+                                        : 'border-transparent hover:bg-gray-50/90 dark:hover:bg-white/[0.03]'
+                                } ${r.enabled ? '' : 'opacity-55'}`}
+                                onClick={() => setEditingId(r.id)}
+                            >
+                                <div className="flex items-center gap-2">
+                                    <div className="min-w-0 flex-1">
+                                        <div className="text-sm font-medium truncate text-gray-900 dark:text-gray-100">{r.name}</div>
+                                        <div className="text-[11px] text-gray-400 mt-0.5 truncate flex items-center gap-1.5">
+                                            <span className="inline-flex px-1 py-px rounded bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-gray-400 shrink-0">
+                                                {triggerLabel[r.triggerType]}
+                                            </span>
+                                            <span className="truncate">{r.trigger || '(未填触发)'}</span>
+                                        </div>
                                     </div>
-                                </div>
-                                <label
-                                    className="toggle !scale-90 shrink-0"
-                                    title={r.enabled ? '已启用' : '已停用'}
-                                    onClick={(e) => e.stopPropagation()}
-                                >
-                                    <input
-                                        type="checkbox"
-                                        checked={r.enabled}
-                                        onChange={(e) => updateRule(r.id, { enabled: e.target.checked })}
-                                    />
-                                    <div className="slider" />
-                                </label>
-                                {confirmDeleteId === r.id ? (
-                                    <div
-                                        className="flex items-center gap-1 shrink-0"
+                                    <label
+                                        className="toggle !scale-90 shrink-0"
+                                        title={r.enabled ? '已启用' : '已停用'}
                                         onClick={(e) => e.stopPropagation()}
                                     >
-                                        <button
-                                            className="text-[10px] px-1.5 py-0.5 rounded bg-red-500 text-white"
-                                            onClick={() => removeRule(r.id)}
+                                        <input
+                                            type="checkbox"
+                                            checked={r.enabled}
+                                            onChange={(e) => updateRule(r.id, { enabled: e.target.checked })}
+                                        />
+                                        <div className="slider" />
+                                    </label>
+                                    {confirmDeleteId === r.id ? (
+                                        <div
+                                            className="flex items-center gap-1 shrink-0"
+                                            onClick={(e) => e.stopPropagation()}
                                         >
-                                            确认
-                                        </button>
+                                            <button
+                                                className="text-[10px] px-1.5 py-0.5 rounded-md bg-red-500 text-white hover:bg-red-600"
+                                                onClick={() => removeRule(r.id)}
+                                            >
+                                                确认
+                                            </button>
+                                            <button
+                                                className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded"
+                                                onClick={() => setConfirmDeleteId(null)}
+                                                title="取消"
+                                            >
+                                                <IconX size={12} />
+                                            </button>
+                                        </div>
+                                    ) : (
                                         <button
-                                            className="p-1 text-gray-400 hover:text-gray-600"
-                                            onClick={() => setConfirmDeleteId(null)}
-                                            title="取消"
+                                            className="p-1 text-gray-300 hover:text-red-500 dark:text-gray-600 dark:hover:text-red-400 shrink-0 rounded"
+                                            title="删除"
+                                            onClick={(e) => {
+                                                e.stopPropagation()
+                                                setConfirmDeleteId(r.id)
+                                            }}
                                         >
-                                            <IconX size={12} />
+                                            <IconTrash size={14} />
                                         </button>
-                                    </div>
-                                ) : (
-                                    <button
-                                        className="p-1 text-gray-400 hover:text-red-500 shrink-0"
-                                        title="删除"
-                                        onClick={(e) => {
-                                            e.stopPropagation()
-                                            setConfirmDeleteId(r.id)
-                                        }}
-                                    >
-                                        <IconTrash size={14} />
-                                    </button>
-                                )}
+                                    )}
+                                </div>
                             </div>
-                        </div>
-                    ))}
-                    {rules.length === 0 && (
-                        <div className="py-10 text-center text-sm text-gray-400">暂无规则，点击「新增规则」</div>
-                    )}
+                        ))}
+                        {rules.length === 0 && (
+                            <div className="py-12 text-center text-sm text-gray-400">暂无规则，点击「新增规则」</div>
+                        )}
+                    </div>
                 </div>
 
                 {/* 右侧编辑 */}
                 <div className="flex-1 min-w-0">
                     {!editing ? (
-                        <div className="card p-10 text-center text-sm text-gray-400">从左侧选择或新增规则</div>
+                        <div className="card !shadow-none hover:!transform-none hover:!shadow-none p-12 text-center text-sm text-gray-400">
+                            从左侧选择或新增规则
+                        </div>
                     ) : (
-                        <div className="card p-5 space-y-4">
-                            <h3 className="text-sm font-semibold">编辑规则</h3>
-
-                            {/* 名称 + 触发方式同行 */}
-                            <div className="grid grid-cols-1 sm:grid-cols-5 gap-3">
-                                <Field label="名称" className="sm:col-span-3">
-                                    <input
-                                        className="input-field"
-                                        value={editing.name}
-                                        onChange={(e) => updateRule(editing.id, { name: e.target.value })}
-                                    />
-                                </Field>
-                                <Field label="触发方式" className="sm:col-span-2">
-                                    <select
-                                        className="input-field"
-                                        value={editing.triggerType}
-                                        onChange={(e) => updateRule(editing.id, { triggerType: e.target.value as CustomApiTriggerType })}
-                                    >
-                                        <option value="exact">精确词</option>
-                                        <option value="fuzzy">模糊词</option>
-                                        <option value="regex">正则</option>
-                                    </select>
-                                </Field>
+                        <div className="card !shadow-none hover:!transform-none hover:!shadow-none bg-gray-50/90 dark:bg-[#18191C] p-4 space-y-3">
+                            <div className="flex items-center justify-between gap-2 px-1">
+                                <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">编辑规则</h3>
+                                <span className="text-xs text-gray-400 font-mono truncate max-w-[40%]">{editing.id}</span>
                             </div>
 
-                            <Field label="触发内容">
-                                <input
-                                    className="input-field font-mono text-xs"
-                                    value={editing.trigger}
-                                    onChange={(e) => updateRule(editing.id, { trigger: e.target.value })}
-                                    placeholder={editing.triggerType === 'regex' ? '例如：天气\\s*(?<city>.+)' : '关键词'}
-                                />
+                            {/* 触发 */}
+                            <SectionBlock title="触发条件">
+                                <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                                    <Field label="规则名称" className="sm:col-span-3">
+                                        <input
+                                            className="input-field"
+                                            value={editing.name}
+                                            onChange={(e) => updateRule(editing.id, { name: e.target.value })}
+                                        />
+                                    </Field>
+                                    <Field label="触发方式" className="sm:col-span-2">
+                                        <select
+                                            className="input-field"
+                                            value={editing.triggerType}
+                                            onChange={(e) => updateRule(editing.id, { triggerType: e.target.value as CustomApiTriggerType })}
+                                        >
+                                            <option value="exact">精确词</option>
+                                            <option value="fuzzy">模糊词</option>
+                                            <option value="regex">正则</option>
+                                        </select>
+                                    </Field>
+                                    <Field label="触发内容" className="sm:col-span-7">
+                                        <input
+                                            className="input-field font-mono text-sm"
+                                            value={editing.trigger}
+                                            onChange={(e) => updateRule(editing.id, { trigger: e.target.value })}
+                                            placeholder={editing.triggerType === 'regex' ? '例如：天气\\s*(?<city>.+)' : '关键词'}
+                                        />
+                                    </Field>
+                                </div>
                                 {editing.triggerType === 'regex' && (
-                                    <p className="text-[11px] text-gray-400 mt-1">
+                                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
                                         捕获示例：
-                                        <code className="mx-0.5">{'天气\\s*(?<city>.+)'}</code>
+                                        <CodeChip>{'天气\\s*(?<city>.+)'}</CodeChip>
                                         命中后可用
-                                        <code className="mx-0.5">{'{{city}}'}</code>
+                                        <CodeChip>{'{{city}}'}</CodeChip>
                                         /
-                                        <code className="mx-0.5">{'{{match1}}'}</code>
+                                        <CodeChip>{'{{match1}}'}</CodeChip>
                                     </p>
                                 )}
-                            </Field>
+                            </SectionBlock>
 
-                            <div className="grid grid-cols-1 sm:grid-cols-5 gap-3">
-                                <Field label="方法" className="sm:col-span-1">
-                                    <select
-                                        className="input-field"
-                                        value={editing.method}
-                                        onChange={(e) => {
-                                            const method = e.target.value as CustomApiHttpMethod
-                                            const patch: Partial<CustomApiRule> = { method }
-                                            if (method === 'GET' || method === 'HEAD') {
-                                                patch.bodyType = 'none'
-                                            } else if (editing.bodyType === 'none') {
-                                                patch.bodyType = 'json'
-                                            }
-                                            updateRule(editing.id, patch)
-                                        }}
-                                    >
-                                        <option value="GET">GET</option>
-                                        <option value="POST">POST</option>
-                                        <option value="PUT">PUT</option>
-                                        <option value="PATCH">PATCH</option>
-                                        <option value="DELETE">DELETE</option>
-                                        <option value="HEAD">HEAD</option>
-                                    </select>
-                                </Field>
-                                <Field label="接口 URL" className="sm:col-span-4">
-                                    <input
-                                        className="input-field font-mono text-xs"
-                                        value={editing.url}
-                                        onChange={(e) => updateRule(editing.id, { url: e.target.value })}
-                                    />
-                                </Field>
-                            </div>
-
-                            <JsonField
-                                label="请求头 (JSON)"
-                                value={headersText}
-                                onChange={setHeadersText}
-                                onFormat={() => formatField('headers')}
-                            />
-
-                            <JsonField
-                                label="Query 参数 (JSON 对象，可含占位符)"
-                                value={queryText}
-                                onChange={setQueryText}
-                                onFormat={() => formatField('query')}
-                                hint='例如 {"q":"{{msg}}"}，会拼到 URL 查询串'
-                            />
-
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                <Field label="请求体类型">
-                                    <select
-                                        className="input-field"
-                                        value={editing.bodyType}
-                                        disabled={editing.method === 'GET' || editing.method === 'HEAD'}
-                                        onChange={(e) => updateRule(editing.id, { bodyType: e.target.value as CustomApiBodyType })}
-                                    >
-                                        <option value="none">无</option>
-                                        <option value="json">JSON</option>
-                                        <option value="form">form-urlencoded</option>
-                                        <option value="multipart">multipart/form-data</option>
-                                        <option value="raw">原始文本</option>
-                                    </select>
-                                </Field>
-                            </div>
-
-                            {showBodyEditor && (
-                                <JsonField
-                                    label={
-                                        editing.bodyType === 'json' || editing.bodyType === 'raw'
-                                            ? '请求体模板'
-                                            : '表单字段 (JSON 对象)'
-                                    }
-                                    value={bodyText}
-                                    onChange={setBodyText}
-                                    onFormat={editing.bodyType === 'raw' ? undefined : () => formatField('body')}
-                                    hint={
-                                        editing.bodyType === 'form' || editing.bodyType === 'multipart'
-                                            ? '键值对象，值可写 {{msg}} 等占位符'
-                                            : editing.bodyType === 'json'
-                                                ? '整段 JSON 文本，可含占位符；可点格式化'
-                                                : '原始文本，按模板渲染后作为 body'
-                                    }
-                                    mono
-                                />
-                            )}
-
-                            <Field label="话术模板">
-                                <textarea
-                                    className="input-field font-mono text-xs min-h-[72px]"
-                                    value={editing.replyTemplate}
-                                    onChange={(e) => updateRule(editing.id, { replyTemplate: e.target.value })}
-                                    placeholder="例如：{{city}} 天气：{{data.weather}}"
-                                />
-                            </Field>
-
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <div className="text-sm">回复当前会话</div>
-                                    <div className="text-xs text-gray-400">
-                                        默认关闭；开启后若下方又勾选了同一群/好友，不会重复发送
-                                    </div>
+                            {/* 请求 */}
+                            <SectionBlock title="请求配置">
+                                <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                                    <Field label="方法" className="sm:col-span-2">
+                                        <select
+                                            className="input-field"
+                                            value={editing.method}
+                                            onChange={(e) => {
+                                                const method = e.target.value as CustomApiHttpMethod
+                                                const kind = defaultPayloadKind(method)
+                                                updateRule(editing.id, {
+                                                    method,
+                                                    bodyType: kind === 'query' ? 'none' : kind,
+                                                })
+                                            }}
+                                        >
+                                            <option value="GET">GET</option>
+                                            <option value="POST">POST</option>
+                                            <option value="PUT">PUT</option>
+                                            <option value="PATCH">PATCH</option>
+                                            <option value="DELETE">DELETE</option>
+                                            <option value="HEAD">HEAD</option>
+                                        </select>
+                                    </Field>
+                                    <Field label="请求体类型" className="sm:col-span-2">
+                                        <select
+                                            className="input-field"
+                                            value={payloadKind}
+                                            onChange={(e) => {
+                                                const kind = e.target.value as PayloadKind
+                                                if (kind !== 'query' && !bodyAllowed) {
+                                                    showToast('GET/HEAD 仅支持 Query', 'warning')
+                                                    return
+                                                }
+                                                updateRule(editing.id, {
+                                                    bodyType: kind === 'query' ? 'none' : kind,
+                                                })
+                                            }}
+                                        >
+                                            <option value="query">Query</option>
+                                            <option value="json" disabled={!bodyAllowed}>JSON Body</option>
+                                            <option value="form" disabled={!bodyAllowed}>form-urlencoded</option>
+                                            <option value="multipart" disabled={!bodyAllowed}>multipart</option>
+                                            <option value="raw" disabled={!bodyAllowed}>原始文本</option>
+                                        </select>
+                                    </Field>
+                                    <Field label="接口 URL" className="sm:col-span-8">
+                                        <input
+                                            className="input-field font-mono text-sm"
+                                            value={editing.url}
+                                            onChange={(e) => updateRule(editing.id, { url: e.target.value })}
+                                        />
+                                    </Field>
                                 </div>
-                                <label className="toggle">
-                                    <input
-                                        type="checkbox"
-                                        checked={editing.replyToCurrent}
-                                        onChange={(e) => updateRule(editing.id, { replyToCurrent: e.target.checked })}
+
+                                <div className="mt-3 space-y-3">
+                                    {payloadKind === 'query' ? (
+                                        <JsonField
+                                            label="Query 参数 (JSON 对象，可含占位符)"
+                                            value={queryText}
+                                            onChange={setQueryText}
+                                            onFormat={() => formatField('query')}
+                                            hint='例如 {"q":"{{msg}}"}，会拼到 URL 查询串'
+                                        />
+                                    ) : (
+                                        <JsonField
+                                            label={
+                                                payloadKind === 'form' || payloadKind === 'multipart'
+                                                    ? '表单字段 (JSON 对象)'
+                                                    : '请求体模板'
+                                            }
+                                            value={bodyText}
+                                            onChange={setBodyText}
+                                            onFormat={payloadKind === 'raw' ? undefined : () => formatField('body')}
+                                            hint={
+                                                payloadKind === 'form' || payloadKind === 'multipart'
+                                                    ? '键值对象，值可写 {{msg}} 等占位符'
+                                                    : payloadKind === 'raw'
+                                                        ? '原始文本，按模板渲染后作为 body'
+                                                        : '整段 JSON 文本，可含占位符；可点格式化'
+                                            }
+                                            mono
+                                        />
+                                    )}
+
+                                    <JsonField
+                                        label="请求头 (JSON)"
+                                        value={headersText}
+                                        onChange={setHeadersText}
+                                        onFormat={() => formatField('headers')}
                                     />
-                                    <div className="slider" />
-                                </label>
-                            </div>
+                                </div>
+                            </SectionBlock>
 
-                            {/* 群 / 好友左右并列 */}
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                <Field label="发送到群（多选）">
-                                    <div className="max-h-40 overflow-y-auto rounded-lg border border-gray-100 dark:border-gray-800 p-2 space-y-1">
-                                        {groups.map((g) => (
-                                            <label key={g.group_id} className="flex items-center gap-2 text-xs py-0.5 cursor-pointer">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={editing.targetGroupIds.includes(String(g.group_id))}
-                                                    onChange={() => toggleTarget('group', String(g.group_id))}
-                                                />
-                                                <span className="truncate">{g.group_name} ({g.group_id})</span>
-                                            </label>
-                                        ))}
-                                        {groups.length === 0 && <div className="text-xs text-gray-400">暂无群</div>}
-                                    </div>
+                            {/* 回复与发送 */}
+                            <SectionBlock title="回复与发送">
+                                <Field label="话术模板">
+                                    <textarea
+                                        className="input-field font-mono text-sm min-h-[80px] leading-relaxed"
+                                        value={editing.replyTemplate}
+                                        onChange={(e) => updateRule(editing.id, { replyTemplate: e.target.value })}
+                                        placeholder="例如：{{city}} 天气：{{res.weather}}"
+                                    />
                                 </Field>
-                                <Field label="发送到好友（多选）">
-                                    <div className="max-h-40 overflow-y-auto rounded-lg border border-gray-100 dark:border-gray-800 p-2 space-y-1">
-                                        {friends.map((f) => (
-                                            <label key={f.user_id} className="flex items-center gap-2 text-xs py-0.5 cursor-pointer">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={editing.targetUserIds.includes(String(f.user_id))}
-                                                    onChange={() => toggleTarget('user', String(f.user_id))}
-                                                />
-                                                <span className="truncate">{f.remark || f.nickname} ({f.user_id})</span>
-                                            </label>
-                                        ))}
-                                        {friends.length === 0 && <div className="text-xs text-gray-400">暂无好友</div>}
-                                    </div>
-                                </Field>
-                            </div>
 
-                            <button className="btn btn-primary text-xs" onClick={saveAll} disabled={saving}>
-                                保存全部规则
-                            </button>
+                                <div className="flex items-center justify-between rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-white/[0.04] px-3 py-2.5 mt-3">
+                                    <div className="text-sm font-medium text-gray-800 dark:text-gray-100">回复当前会话（群/好友）</div>
+                                    <label className="toggle">
+                                        <input
+                                            type="checkbox"
+                                            checked={editing.replyToCurrent}
+                                            onChange={(e) => updateRule(editing.id, { replyToCurrent: e.target.checked })}
+                                        />
+                                        <div className="slider" />
+                                    </label>
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+                                    <Field label="发送到群（多选）">
+                                        <div className="max-h-40 overflow-y-auto rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-black/20 p-1.5 space-y-0.5">
+                                            {groups.map((g) => (
+                                                <label
+                                                    key={g.group_id}
+                                                    className="flex items-center gap-2 text-sm py-1.5 px-2 rounded-md cursor-pointer hover:bg-white dark:hover:bg-white/[0.06]"
+                                                >
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={editing.targetGroupIds.includes(String(g.group_id))}
+                                                        onChange={() => toggleTarget('group', String(g.group_id))}
+                                                    />
+                                                    <span className="truncate">{g.group_name} ({g.group_id})</span>
+                                                </label>
+                                            ))}
+                                            {groups.length === 0 && <div className="text-sm text-gray-400 px-2 py-3">暂无群</div>}
+                                        </div>
+                                    </Field>
+                                    <Field label="发送到好友（多选）">
+                                        <div className="max-h-40 overflow-y-auto rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-black/20 p-1.5 space-y-0.5">
+                                            {friends.map((f) => (
+                                                <label
+                                                    key={f.user_id}
+                                                    className="flex items-center gap-2 text-sm py-1.5 px-2 rounded-md cursor-pointer hover:bg-white dark:hover:bg-white/[0.06]"
+                                                >
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={editing.targetUserIds.includes(String(f.user_id))}
+                                                        onChange={() => toggleTarget('user', String(f.user_id))}
+                                                    />
+                                                    <span className="truncate">{f.remark || f.nickname} ({f.user_id})</span>
+                                                </label>
+                                            ))}
+                                            {friends.length === 0 && <div className="text-sm text-gray-400 px-2 py-3">暂无好友</div>}
+                                        </div>
+                                    </Field>
+                                </div>
+                            </SectionBlock>
+
+                            <div className="pt-1 px-1">
+                                <button className="btn btn-primary text-sm" onClick={saveAll} disabled={saving}>
+                                    保存全部规则
+                                </button>
+                            </div>
                         </div>
                     )}
                 </div>
@@ -522,10 +584,48 @@ export default function CustomApiPage() {
     )
 }
 
+/** 编辑区分区块：白底描边，和灰色外层区分开 */
+function SectionBlock({ title, children }: { title: string; children: React.ReactNode }) {
+    return (
+        <section className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#1e1e20] p-4 shadow-sm">
+            <div className="text-sm font-semibold text-gray-800 dark:text-gray-100 mb-3 pb-2 border-b border-gray-100 dark:border-gray-800">
+                {title}
+            </div>
+            {children}
+        </section>
+    )
+}
+
+function CodeChip({ children }: { children: React.ReactNode }) {
+    return (
+        <code className="mx-0.5 px-1 py-px rounded bg-gray-100 dark:bg-white/10 text-xs font-mono text-primary/90 dark:text-primary">
+            {children}
+        </code>
+    )
+}
+
+function VarGroup({ title, children }: { title: string; children: React.ReactNode }) {
+    return (
+        <div>
+            <div className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 mb-1.5 uppercase tracking-wide">{title}</div>
+            <ul className="space-y-1 list-none pl-0">{children}</ul>
+        </div>
+    )
+}
+
+function VarItem({ name, desc }: { name: string; desc: string }) {
+    return (
+        <li className="flex items-start gap-1.5">
+            <CodeChip>{name}</CodeChip>
+            <span className="text-gray-500 dark:text-gray-400 leading-snug">{desc}</span>
+        </li>
+    )
+}
+
 function Field({ label, children, className = '' }: { label: string; children: React.ReactNode; className?: string }) {
     return (
         <div className={className}>
-            <div className="text-sm font-medium text-gray-800 dark:text-gray-200 mb-1.5">{label}</div>
+            <div className="text-sm font-medium text-gray-700 dark:text-gray-200 mb-1.5">{label}</div>
             {children}
         </div>
     )
@@ -549,19 +649,19 @@ function JsonField({
     return (
         <div>
             <div className="flex items-center justify-between gap-2 mb-1.5">
-                <div className="text-sm font-medium text-gray-800 dark:text-gray-200">{label}</div>
+                <div className="text-sm font-medium text-gray-700 dark:text-gray-200">{label}</div>
                 {onFormat && (
-                    <button type="button" className="btn btn-ghost !px-2 !py-1 text-[11px]" onClick={onFormat}>
-                        格式化 JSON
+                    <button type="button" className="btn btn-ghost !px-2 !py-1 text-xs text-gray-500" onClick={onFormat}>
+                        格式化
                     </button>
                 )}
             </div>
             <textarea
-                className={`input-field text-xs min-h-[88px] ${mono ? 'font-mono' : ''}`}
+                className={`input-field text-sm min-h-[96px] leading-relaxed ${mono ? 'font-mono' : ''}`}
                 value={value}
                 onChange={(e) => onChange(e.target.value)}
             />
-            {hint && <p className="text-[11px] text-gray-400 mt-1">{hint}</p>}
+            {hint && <p className="text-xs text-gray-400 mt-1.5 leading-relaxed">{hint}</p>}
         </div>
     )
 }
