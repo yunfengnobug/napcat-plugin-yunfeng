@@ -23,18 +23,42 @@ export type CustomApiTriggerType = 'exact' | 'fuzzy' | 'regex'
 export type CustomApiHttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD'
 export type CustomApiBodyType = 'none' | 'json' | 'form' | 'multipart' | 'raw'
 
-export interface CustomApiRule {
+/**
+ * 预期条件：path 须为本步 resN. 开头
+ * value 非空则须相等（可写 {{变量}}）；value 为空则仅要求 key 存在
+ */
+export interface CustomApiExpectedCondition {
+    path: string
+    value: string
+}
+
+/** 串行请求中的一步 */
+export interface CustomApiStep {
     id: string
     name: string
-    enabled: boolean
-    triggerType: CustomApiTriggerType
-    trigger: string
     method: CustomApiHttpMethod
     url: string
     headers?: Record<string, string>
     queryTemplate?: string
     bodyType: CustomApiBodyType
     bodyTemplate?: string
+    /** 超时毫秒，默认 8000 */
+    timeoutMs: number
+    /** 预期条件（最多 2 条） */
+    expectedConditions: CustomApiExpectedCondition[]
+    /** 且 / 或 */
+    expectedLogic: 'and' | 'or'
+}
+
+export interface CustomApiRule {
+    id: string
+    name: string
+    enabled: boolean
+    triggerType: CustomApiTriggerType
+    trigger: string
+    steps: CustomApiStep[]
+    /** 超时/缺字段/缺变量时中止且不发送，默认 true */
+    strictAbort: boolean
     replyTemplate: string
     replyToCurrent: boolean
     targetGroupIds: string[]
@@ -44,8 +68,44 @@ export interface CustomApiRule {
 /** 自定义 API 规则接口返回体 */
 export interface CustomApiRulesPayload {
     rules: CustomApiRule[]
-    /** 一条消息命中多条规则时是否只调用一次，默认 true */
     oncePerMessage: boolean
+}
+
+/** 试跑：单步结果 */
+export interface CustomApiTestStepResult {
+    index: number
+    name: string
+    method: string
+    url: string
+    status: number | null
+    httpOk: boolean
+    durationMs: number
+    text: string
+    json: unknown
+    expectOk: boolean
+    expectMessage: string | null
+    error: string | null
+}
+
+/** 试跑：触发匹配详情 */
+export interface CustomApiTestMatchInfo {
+    mockMsg: string
+    triggerType: CustomApiTriggerType
+    trigger: string
+    matched: boolean
+    match: string | null
+    groups: string[]
+    named: Record<string, string>
+}
+
+/** 试跑：整体结果（不发送消息） */
+export interface CustomApiTestResult {
+    steps: CustomApiTestStepResult[]
+    match: CustomApiTestMatchInfo
+    replyPreview: string | null
+    replyError: string | null
+    aborted: boolean
+    abortReason: string | null
 }
 
 export interface PluginConfig {
@@ -59,8 +119,8 @@ export interface PluginConfig {
         customApi: boolean
     }
     customApiRules?: CustomApiRule[]
+    customApiOncePerMessage?: boolean
     groupConfigs?: Record<string, GroupConfig>
-    /** 仅展示用，后端 /config 会附带 */
     webhookPath?: string
 }
 

@@ -17,8 +17,10 @@ import type { NapCatPluginContext, PluginLogger } from 'napcat-types/napcat-oneb
 import { DEFAULT_CONFIG } from '../config';
 import type {
     CustomApiBodyType,
+    CustomApiExpectedCondition,
     CustomApiHttpMethod,
     CustomApiRule,
+    CustomApiStep,
     CustomApiTriggerType,
     FeatureFlags,
     FeatureKey,
@@ -28,6 +30,8 @@ import type {
 
 const HTTP_METHODS: CustomApiHttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD'];
 const BODY_TYPES: CustomApiBodyType[] = ['none', 'json', 'form', 'multipart', 'raw'];
+/** 单步请求默认超时（毫秒） */
+const DEFAULT_STEP_TIMEOUT_MS = 8000;
 
 // ==================== 配置清洗工具 ====================
 
@@ -45,20 +49,29 @@ export type SanitizeCustomApiRuleResult =
     | { ok: true; rule: CustomApiRule }
     | { ok: false; error: string };
 
-/** 清洗单条自定义 API 规则（触发内容、URL 必填） */
-export function sanitizeCustomApiRule(raw: unknown): SanitizeCustomApiRuleResult {
-    if (!isObject(raw)) return { ok: false, error: '规则格式无效' };
-    const triggerType = raw.triggerType;
-    if (triggerType !== 'exact' && triggerType !== 'fuzzy' && triggerType !== 'regex') {
-        return { ok: false, error: '触发方式无效' };
+/** 清洗请求头对象 */
+function sanitizeHeaders(raw: unknown): Record<string, string> {
+    const headers: Record<string, string> = {};
+    if (isObject(raw)) {
+        for (const [k, v] of Object.entries(raw)) {
+            if (typeof v === 'string') headers[k] = v;
+            else if (v != null) headers[k] = String(v);
+        }
     }
+    if (Object.keys(headers).length === 0) {
+        headers['Content-Type'] = 'application/json';
+    }
+    return headers;
+}
 
+/** 清洗单步请求 */
+function sanitizeCustomApiStep(raw: unknown, index: number): CustomApiStep | null {
+    if (!isObject(raw)) return null;
     const methodRaw = String(raw.method || 'GET').toUpperCase();
     const method = (HTTP_METHODS.includes(methodRaw as CustomApiHttpMethod)
         ? methodRaw
         : 'GET') as CustomApiHttpMethod;
 
-    // 兼容旧配置：仅有 bodyTemplate 且无 bodyType 时，按 POST→json / 其他→none
     let bodyType: CustomApiBodyType = 'none';
     if (typeof raw.bodyType === 'string' && BODY_TYPES.includes(raw.bodyType as CustomApiBodyType)) {
         bodyType = raw.bodyType as CustomApiBodyType;
@@ -66,27 +79,104 @@ export function sanitizeCustomApiRule(raw: unknown): SanitizeCustomApiRuleResult
         bodyType = 'json';
     }
 
+    const url = typeof raw.url === 'string' ? raw.url.trim() : '';
+    if (!url) return null;
+
+    let timeoutMs = DEFAULT_STEP_TIMEOUT_MS;
+    if (typeof raw.timeoutMs === 'number' && Number.isFinite(raw.timeoutMs)) {
+        timeoutMs = Math.min(120000, Math.max(1000, Math.floor(raw.timeoutMs)));
+    }
+
+    // 预期条件：最多 2 条；路径统一为本步 resN.xxx（第 1 步 res1.，第 2 步 res2.）
+    const stepResPrefix = `res${index + 1}`;
+    const expectedConditions: CustomApiExpectedCondition[] = [];
+    if (Array.isArray(raw.expectedConditions)) {
+        for (const item of raw.expectedConditions) {
+            if (!isObject(item)) continue;
+            let path = typeof item.path === 'string' ? item.path.trim() : '';
+            if (!path || path === 'res' || /^res\d+$/.test(path)) continue;
+            // 去掉旧版 res. / 任意 resN. 前缀，再挂到本步 resN.
+            path = path.replace(/^res\d*\./, '');
+            if (!path) continue;
+            path = `${stepResPrefix}.${path}`;
+            // value 可为空：表示仅要求该 key 存在
+            const value = item.value != null ? String(item.value).trim() : '';
+            expectedConditions.push({ path, value });
+            if (expectedConditions.length >= 2) break;
+        }
+    }
+
+    const expectedLogic = raw.expectedLogic === 'or' ? 'or' : 'and';
+
+    return {
+        id: typeof raw.id === 'string' && raw.id.trim()
+            ? raw.id.trim()
+            : crypto.randomBytes(6).toString('hex'),
+        name: typeof raw.name === 'string' && raw.name.trim()
+            ? raw.name.trim()
+            : `接口 ${index + 1}`,
+        method,
+        url,
+        headers: sanitizeHeaders(raw.headers),
+        queryTemplate: typeof raw.queryTemplate === 'string' ? raw.queryTemplate : '',
+        bodyType,
+        bodyTemplate: typeof raw.bodyTemplate === 'string' ? raw.bodyTemplate : '',
+        timeoutMs,
+        expectedConditions,
+        expectedLogic,
+    };
+}
+
+/**
+ * 从旧版单接口字段迁移为 steps[0]
+ * 兼容尚未升级的配置
+ */
+function migrateLegacySteps(raw: Record<string, unknown>): CustomApiStep[] {
+    const url = typeof raw.url === 'string' ? raw.url.trim() : '';
+    if (!url) return [];
+    const step = sanitizeCustomApiStep({
+        id: 'step1',
+        name: '接口 1',
+        method: raw.method,
+        url: raw.url,
+        headers: raw.headers,
+        queryTemplate: raw.queryTemplate,
+        bodyType: raw.bodyType,
+        bodyTemplate: raw.bodyTemplate,
+        timeoutMs: raw.timeoutMs ?? DEFAULT_STEP_TIMEOUT_MS,
+        expectedConditions: raw.expectedConditions,
+        expectedLogic: raw.expectedLogic,
+    }, 0);
+    return step ? [step] : [];
+}
+
+/** 清洗单条自定义 API 规则（触发内容必填，至少一步有效接口） */
+export function sanitizeCustomApiRule(raw: unknown): SanitizeCustomApiRuleResult {
+    if (!isObject(raw)) return { ok: false, error: '规则格式无效' };
+    const triggerType = raw.triggerType;
+    if (triggerType !== 'exact' && triggerType !== 'fuzzy' && triggerType !== 'regex') {
+        return { ok: false, error: '触发方式无效' };
+    }
+
     const id = typeof raw.id === 'string' && raw.id.trim() ? raw.id.trim() : crypto.randomBytes(8).toString('hex');
     const name = typeof raw.name === 'string' ? raw.name.trim() : '未命名规则';
     const trigger = typeof raw.trigger === 'string' ? raw.trigger.trim() : '';
-    const url = typeof raw.url === 'string' ? raw.url.trim() : '';
     if (!trigger) {
         return { ok: false, error: `「${name || '未命名规则'}」触发内容不能为空` };
     }
-    if (!url) {
-        return { ok: false, error: `「${name || '未命名规则'}」接口 URL 不能为空` };
+
+    const steps: CustomApiStep[] = [];
+    if (Array.isArray(raw.steps) && raw.steps.length > 0) {
+        raw.steps.forEach((item, index) => {
+            const step = sanitizeCustomApiStep(item, index);
+            if (step) steps.push(step);
+        });
+    } else {
+        steps.push(...migrateLegacySteps(raw));
     }
 
-    const headers: Record<string, string> = {};
-    if (isObject(raw.headers)) {
-        for (const [k, v] of Object.entries(raw.headers)) {
-            if (typeof v === 'string') headers[k] = v;
-            else if (v != null) headers[k] = String(v);
-        }
-    }
-    // 未配置请求头时补默认 Content-Type
-    if (Object.keys(headers).length === 0) {
-        headers['Content-Type'] = 'application/json';
+    if (steps.length === 0) {
+        return { ok: false, error: `「${name || '未命名规则'}」至少配置一个有效接口（URL 不能为空）` };
     }
 
     const targetGroupIds = Array.isArray(raw.targetGroupIds)
@@ -104,14 +194,10 @@ export function sanitizeCustomApiRule(raw: unknown): SanitizeCustomApiRuleResult
             enabled: raw.enabled !== false,
             triggerType: triggerType as CustomApiTriggerType,
             trigger,
-            method,
-            url,
-            headers,
-            queryTemplate: typeof raw.queryTemplate === 'string' ? raw.queryTemplate : '',
-            bodyType,
-            bodyTemplate: typeof raw.bodyTemplate === 'string' ? raw.bodyTemplate : '',
+            steps,
+            // 默认开启严格中止
+            strictAbort: raw.strictAbort !== false,
             replyTemplate: typeof raw.replyTemplate === 'string' ? raw.replyTemplate : '{{res}}',
-            // 默认关闭「回复当前会话」
             replyToCurrent: raw.replyToCurrent === true,
             targetGroupIds,
             targetUserIds,
