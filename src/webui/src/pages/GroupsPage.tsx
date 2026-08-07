@@ -301,13 +301,23 @@ export default function GroupsPage() {
                                 </p>
                             </div>
                             <ToggleRow
-                                label="Webhook 通知推群"
-                                desc="开启后，外部通知会推送到本群（仍需已授权且开机）"
+                                label="Webhook 通知"
+                                desc="开启后，外部 Webhook 通知会推送到本群（仍需已授权且开机）"
                                 checked={selected.features.notify}
                                 onChange={(v) => patchGroup(
                                     selected.group_id,
                                     { features: { notify: v } },
-                                    `通知已${v ? '开启' : '关闭'}`
+                                    `Webhook 通知已${v ? '开启' : '关闭'}`
+                                )}
+                            />
+                            <ToggleRow
+                                label="自定义 API"
+                                desc="开启后，本群消息可按规则触发外部接口并回发话术"
+                                checked={selected.features.customApi === true}
+                                onChange={(v) => patchGroup(
+                                    selected.group_id,
+                                    { features: { customApi: v } },
+                                    `自定义 API 已${v ? '开启' : '关闭'}`
                                 )}
                             />
                         </div>

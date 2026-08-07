@@ -6,11 +6,13 @@ interface SidebarProps {
     onPageChange: (page: PageId) => void
 }
 
+/** 菜单顺序：仪表盘 / 全局设置 / 群管理 固定前三，后续新功能只往后追加 */
 const menuItems: { id: PageId; label: string; icon: React.ReactNode }[] = [
     { id: 'status', label: '仪表盘', icon: <IconDashboard size={18} /> },
-    { id: 'groups', label: '群管理', icon: <IconGroup size={18} /> },
     { id: 'global', label: '全局设置', icon: <IconSettings size={18} /> },
-    { id: 'config', label: '插件配置', icon: <IconTerminal size={18} /> },
+    { id: 'groups', label: '群管理', icon: <IconGroup size={18} /> },
+    { id: 'customApi', label: '自定义 API', icon: <IconTerminal size={18} /> },
+    { id: 'config', label: 'Webhook 通知', icon: <IconTerminal size={18} /> },
 ]
 
 export default function Sidebar({ currentPage, onPageChange }: SidebarProps) {

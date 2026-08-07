@@ -24,11 +24,16 @@ export default function GlobalSettingsPage() {
 
     useEffect(() => { fetchConfig() }, [fetchConfig])
 
-    const saveFeatureDefaults = async (notify: boolean) => {
+    const saveFeatureDefaults = async (patch: Partial<PluginConfig['featureDefaults']>) => {
         if (!config) return
         setSaving(true)
         try {
-            const featureDefaults = { ...config.featureDefaults, notify }
+            const featureDefaults = {
+                ...config.featureDefaults,
+                notify: config.featureDefaults?.notify !== false,
+                customApi: config.featureDefaults?.customApi === true,
+                ...patch,
+            }
             const { webhookPath: _wp, ...payload } = { ...config, featureDefaults }
             await noAuthFetch('/config', {
                 method: 'POST',
@@ -67,22 +72,18 @@ export default function GlobalSettingsPage() {
                     功能初始开关
                 </h3>
                 <div className="space-y-5">
-                    <div className="flex items-center justify-between gap-4">
-                        <div>
-                            <div className="text-sm font-medium text-gray-800 dark:text-gray-200">Webhook 通知推群</div>
-                            <div className="text-xs text-gray-400 mt-0.5">
-                                新群首次开机时，通知功能默认按此开关写入该群
-                            </div>
-                        </div>
-                        <label className="toggle shrink-0">
-                            <input
-                                type="checkbox"
-                                checked={config.featureDefaults?.notify !== false}
-                                onChange={(e) => saveFeatureDefaults(e.target.checked)}
-                            />
-                            <div className="slider" />
-                        </label>
-                    </div>
+                    <ToggleRow
+                        label="Webhook 通知推群"
+                        desc="新群首次开机时，通知功能默认按此开关写入该群"
+                        checked={config.featureDefaults?.notify !== false}
+                        onChange={(v) => saveFeatureDefaults({ notify: v })}
+                    />
+                    <ToggleRow
+                        label="自定义 API"
+                        desc="新群首次开机时，自定义 API 默认按此开关写入该群"
+                        checked={config.featureDefaults?.customApi === true}
+                        onChange={(v) => saveFeatureDefaults({ customApi: v })}
+                    />
                 </div>
             </div>
 
@@ -92,6 +93,23 @@ export default function GlobalSettingsPage() {
                     保存中...
                 </div>
             )}
+        </div>
+    )
+}
+
+function ToggleRow({ label, desc, checked, onChange }: {
+    label: string; desc: string; checked: boolean; onChange: (v: boolean) => void
+}) {
+    return (
+        <div className="flex items-center justify-between gap-4">
+            <div>
+                <div className="text-sm font-medium text-gray-800 dark:text-gray-200">{label}</div>
+                <div className="text-xs text-gray-400 mt-0.5">{desc}</div>
+            </div>
+            <label className="toggle shrink-0">
+                <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+                <div className="slider" />
+            </label>
         </div>
     )
 }

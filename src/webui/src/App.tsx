@@ -6,16 +6,18 @@ import StatusPage from './pages/StatusPage'
 import ConfigPage from './pages/ConfigPage'
 import GlobalSettingsPage from './pages/GlobalSettingsPage'
 import GroupsPage from './pages/GroupsPage'
+import CustomApiPage from './pages/CustomApiPage'
 import { useStatus } from './hooks/useStatus'
 import { useTheme } from './hooks/useTheme'
 
-export type PageId = 'status' | 'groups' | 'global' | 'config'
+export type PageId = 'status' | 'groups' | 'customApi' | 'global' | 'config'
 
 const pageConfig: Record<PageId, { title: string; desc: string }> = {
     status: { title: '仪表盘', desc: '插件运行状态与数据概览' },
-    groups: { title: '群管理', desc: '左侧选群，右侧配置授权、开机与功能' },
     global: { title: '全局设置', desc: '新群首次开机时写入的功能初始值' },
-    config: { title: '插件配置', desc: 'Webhook 密钥与基础参数' },
+    groups: { title: '群管理', desc: '左侧选群，右侧配置授权、开机与功能' },
+    customApi: { title: '自定义 API', desc: '触发词 → 请求外部接口 → 拼话术发送' },
+    config: { title: 'Webhook 通知', desc: '推送地址、密钥与相关基础参数' },
 }
 
 function App() {
@@ -39,6 +41,7 @@ function App() {
         switch (currentPage) {
             case 'status': return <StatusPage status={status} onRefresh={fetchStatus} />
             case 'groups': return <GroupsPage />
+            case 'customApi': return <CustomApiPage />
             case 'global': return <GlobalSettingsPage />
             case 'config': return <ConfigPage />
             default: return <StatusPage status={status} onRefresh={fetchStatus} />

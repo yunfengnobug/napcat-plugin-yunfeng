@@ -9,7 +9,12 @@ NapCat 插件：群授权 / 开机门禁为基础，Webhook 通知推群可跑�
 3. **门禁**：仅当「全局启用 + 已授权且未过期 + 已开机」时，才处理该群后续功能；否则直接跳过
 4. **全局设置**：单独页面；只影响尚未开启过的群——它们**首次开机**时写入功能初始值；已开启群不受影响
 5. **群管理**：左侧群列表，右侧配置该群的基础（开机/授权）与各功能
-6. **Webhook**：外部后台 POST 通知（不传群号），插件推送到所有「已授权 + 开机 + 开启通知」的群
+6. **Webhook 通知**：外部后台 POST 通知（不传群号），插件推送到所有「已授权 + 开机 + 开启通知」的群
+7. **自定义 API**：消息按精确词 / 模糊词 / 正则触发 → 插件请求外部接口 → 按模板拼话术 → 发到指定群/好友（群侧需开启该功能）
+   - 请求：GET/POST/PUT/PATCH/DELETE/HEAD；Query；Body 支持 JSON / form-urlencoded / multipart / raw
+   - 新建规则默认请求头：`Accept` / `Accept-Language` / `User-Agent`（也可自行改）
+   - 「回复当前会话」默认关闭；开启时若又勾选了同一群/好友，不会重复发送
+   - 正则变量：`{{match}}`、`{{match1}}`…；命名分组 `(?<city>…)` → `{{city}}`
 
 ## 📁 项目结构
 
@@ -213,6 +218,9 @@ graph TD
 | POST | `/groups/:id/config` | 单群：`poweredOn` / `features` / `addAuthDays` / `setAuthDays` |
 | POST | `/groups/bulk-config` | 多选批量写入同上字段 |
 | POST | `/webhook/notify` | 外部通知推群（需密钥） |
+| GET | `/friends` | 好友列表（自定义 API 选目标） |
+| GET | `/custom-api/rules` | 获取自定义 API 规则 |
+| POST | `/custom-api/rules` | 全量保存自定义 API 规则 |
 
 ### Webhook 调用示例
 

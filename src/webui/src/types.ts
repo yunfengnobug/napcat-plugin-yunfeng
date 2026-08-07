@@ -16,6 +16,29 @@ export interface PluginStatus {
 
 export interface FeatureFlags {
     notify?: boolean
+    customApi?: boolean
+}
+
+export type CustomApiTriggerType = 'exact' | 'fuzzy' | 'regex'
+export type CustomApiHttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD'
+export type CustomApiBodyType = 'none' | 'json' | 'form' | 'multipart' | 'raw'
+
+export interface CustomApiRule {
+    id: string
+    name: string
+    enabled: boolean
+    triggerType: CustomApiTriggerType
+    trigger: string
+    method: CustomApiHttpMethod
+    url: string
+    headers?: Record<string, string>
+    queryTemplate?: string
+    bodyType: CustomApiBodyType
+    bodyTemplate?: string
+    replyTemplate: string
+    replyToCurrent: boolean
+    targetGroupIds: string[]
+    targetUserIds: string[]
 }
 
 export interface PluginConfig {
@@ -26,7 +49,9 @@ export interface PluginConfig {
     webhookSecret: string
     featureDefaults: {
         notify: boolean
+        customApi: boolean
     }
+    customApiRules?: CustomApiRule[]
     groupConfigs?: Record<string, GroupConfig>
     /** 仅展示用，后端 /config 会附带 */
     webhookPath?: string
@@ -52,7 +77,14 @@ export interface GroupInfo {
     settingsInitialized: boolean
     features: {
         notify: boolean
+        customApi: boolean
     }
+}
+
+export interface FriendInfo {
+    user_id: number
+    nickname: string
+    remark: string
 }
 
 export interface ApiResponse<T = unknown> {
