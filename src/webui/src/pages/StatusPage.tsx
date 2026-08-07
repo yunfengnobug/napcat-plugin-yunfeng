@@ -58,10 +58,10 @@ export default function StatusPage({ status, onRefresh }: StatusPageProps) {
     const statCards = [
         {
             label: '插件状态',
-            value: config.enabled ? '运行中' : '已停用',
+            value: '运行中',
             icon: <IconPower size={18} />,
-            color: config.enabled ? 'text-emerald-500' : 'text-red-400',
-            bg: config.enabled ? 'bg-emerald-500/10' : 'bg-red-500/10',
+            color: 'text-emerald-500',
+            bg: 'bg-emerald-500/10',
         },
         {
             label: '运行时长',
@@ -78,8 +78,8 @@ export default function StatusPage({ status, onRefresh }: StatusPageProps) {
             bg: 'bg-amber-500/10',
         },
         {
-            label: '累计处理',
-            value: String(stats.processed),
+            label: '通知发送',
+            value: String(stats.notifySent ?? 0),
             icon: <IconDownload size={18} />,
             color: 'text-violet-500',
             bg: 'bg-violet-500/10',
@@ -119,6 +119,11 @@ export default function StatusPage({ status, onRefresh }: StatusPageProps) {
                     <InfoRow label="命令前缀" value={config.commandPrefix} />
                     <InfoRow label="冷却时间" value={`${config.cooldownSeconds} 秒`} />
                     <InfoRow label="调试模式" value={config.debug ? '开启' : '关闭'} />
+                    <InfoRow label="累计处理" value={String(stats.processed)} />
+                    <InfoRow
+                        label="通知初始(全局)"
+                        value={config.featureDefaults?.notify !== false ? '开启' : '关闭'}
+                    />
                 </div>
             </div>
         </div>

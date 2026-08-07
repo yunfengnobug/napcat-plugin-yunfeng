@@ -197,24 +197,24 @@ export async function handleMessage(ctx: NapCatPluginContext, event: OB11Message
 
         pluginState.ctx.logger.debug(`收到消息: ${rawMessage} | 类型: ${messageType}`);
 
-        // 群消息：检查该群是否启用
+        // 群消息：未授权或关机则不处理后续功能
         if (messageType === 'group' && groupId) {
-            if (!pluginState.isGroupEnabled(String(groupId))) return;
+            if (!pluginState.canProcessGroup(String(groupId))) return;
         }
 
         // 检查命令前缀
-        const prefix = pluginState.config.commandPrefix || '#cmd';
+        const prefix = pluginState.config.commandPrefix || '#yf';
         if (!rawMessage.startsWith(prefix)) return;
 
         // 解析命令参数
         const args = rawMessage.slice(prefix.length).trim().split(/\s+/);
         const subCommand = args[0]?.toLowerCase() || '';
 
-        // TODO: 在这里实现你的命令处理逻辑
+        // 基础命令（后续业务功能在门禁通过后再扩展）
         switch (subCommand) {
             case 'help': {
                 const helpText = [
-                    `[= 插件帮助 =]`,
+                    `[= 云枫帮助 =]`,
                     `${prefix} help - 显示帮助信息`,
                     `${prefix} ping - 测试连通性`,
                     `${prefix} status - 查看运行状态`,
@@ -240,18 +240,26 @@ export async function handleMessage(ctx: NapCatPluginContext, event: OB11Message
             }
 
             case 'status': {
+                const gid = groupId ? String(groupId) : '';
+                const g = gid ? pluginState.getGroupConfig(gid) : null;
                 const statusText = [
-                    `[= 插件状态 =]`,
+                    `[= 云枫状态 =]`,
                     `运行时长: ${pluginState.getUptimeFormatted()}`,
                     `今日处理: ${pluginState.stats.todayProcessed}`,
                     `总计处理: ${pluginState.stats.processed}`,
+                    `通知发送: ${pluginState.stats.notifySent || 0}`,
+                    ...(g ? [
+                        `本群开机: ${g.poweredOn ? '是' : '否'}`,
+                        `授权到期: ${g.authExpireAt > Date.now()
+                            ? new Date(g.authExpireAt).toLocaleString('zh-CN', { hour12: false })
+                            : '未授权/已过期'}`,
+                    ] : []),
                 ].join('\n');
                 await sendReply(ctx, event, statusText);
                 break;
             }
 
             default: {
-                // TODO: 在这里处理你的主要命令逻辑
                 break;
             }
         }

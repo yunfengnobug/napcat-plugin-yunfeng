@@ -5,11 +5,17 @@ export interface PluginStatus {
     uptime: number
     uptimeFormatted: string
     config: PluginConfig
+    webhookPath?: string
     stats: {
         processed: number
         todayProcessed: number
         lastUpdateDay: string
+        notifySent?: number
     }
+}
+
+export interface FeatureFlags {
+    notify?: boolean
 }
 
 export interface PluginConfig {
@@ -17,12 +23,20 @@ export interface PluginConfig {
     debug: boolean
     commandPrefix: string
     cooldownSeconds: number
+    webhookSecret: string
+    featureDefaults: {
+        notify: boolean
+    }
     groupConfigs?: Record<string, GroupConfig>
-    // TODO: 在这里添加你的插件配置项类型
+    /** 仅展示用，后端 /config 会附带 */
+    webhookPath?: string
 }
 
 export interface GroupConfig {
-    enabled?: boolean
+    poweredOn?: boolean
+    authExpireAt?: number
+    settingsInitialized?: boolean
+    features?: FeatureFlags
 }
 
 export interface GroupInfo {
@@ -30,9 +44,15 @@ export interface GroupInfo {
     group_name: string
     member_count: number
     max_member_count: number
-    enabled: boolean
-    /** 定时推送时间（如 '08:30'），null 表示未设置（模板默认不使用，按需扩展） */
-    scheduleTime?: string | null
+    poweredOn: boolean
+    authExpireAt: number
+    authExpireText: string
+    authorized: boolean
+    canProcess: boolean
+    settingsInitialized: boolean
+    features: {
+        notify: boolean
+    }
 }
 
 export interface ApiResponse<T = unknown> {
