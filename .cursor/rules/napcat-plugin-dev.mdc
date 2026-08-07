@@ -5,13 +5,13 @@ alwaysApply: true
 
 # NapCat 插件开发规范
 
-## 1. 必须查阅官方 API 文档（Apifox llms.txt）
+## 1. 必须查阅官方文档（指南站 + Apifox llms.txt）
 
-开发 / 修改插件前，**必须先查阅 NapCat 官方 API**，再据此实现。禁止凭记忆或猜测编造接口。
+开发 / 修改插件前，**必须先查阅 NapCat 官方文档**，再据此实现。禁止凭记忆或猜测编造接口。
 
-1. 使用官方文档索引：<https://napcat.apifox.cn/llms.txt>
-2. 按索引找到相关接口的 `.md` 页面（如 `设置专属头衔` → `https://napcat.apifox.cn/226656931e0.md`），拉取并阅读参数 / 返回值
-3. 仅基于查阅到的文档编写代码；禁止编造未在文档中出现的 API
+1. 使用/开发指南（安装、配置、插件机制、兼容表）：<https://napneko.github.io>
+2. Action / 事件参数以 API 索引为准：<https://napcat.apifox.cn/llms.txt>，按索引打开对应 `.md`（如 `设置专属头衔` → `https://napcat.apifox.cn/226656931e0.md`）
+3. 开发约束摘要见同目录 `napcat-official-dev-notes.mdc`；仅基于查阅到的文档编写代码
 
 ## 2. 开发功能前先报告所用接口
 

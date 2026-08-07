@@ -1,0 +1,42 @@
+---
+description: 基于 napneko.github.io 官方文档的插件开发注意点（生命周期、Action、安全、兼容性）
+alwaysApply: true
+---
+
+# NapCat 官方文档 · 插件开发注意点
+
+依据官方站 <https://napneko.github.io>（源码 [NapCatDocs](https://github.com/NapNeko/NapCatDocs)）。接口参数以 Apifox / MCP 为准，勿凭记忆编造。
+
+## 生命周期与入口
+
+- 仅 `plugin_init` 必选；卸载/热重载前必须实现 `plugin_cleanup`，释放定时器、连接、监听，否则会泄漏或重复注册
+- `plugin_onmessage` 内先判 `event.post_type === EventType.MESSAGE`；其余 OneBot 事件用 `plugin_onevent`
+- 业务逻辑放 `handlers/`，`index.ts` 只做生命周期与分发；日志统一用 `ctx.logger`
+
+## Action 调用
+
+- 签名固定四参：`ctx.actions.call(action, params, ctx.adapterName, ctx.pluginManager.config)`
+- 无参传 `void 0`；`group_id` / `user_id` 建议转成字符串
+- 优先 `ctx.actions`；`ctx.core` / `ctx.oneBot` 属内部 API，升级可能变化，非必要不用
+
+## 配置、数据与路由
+
+- WebUI 配置导出 `plugin_config_ui`（或 `plugin_config_schema`）；变更用 `plugin_on_config_change` / `plugin_config_controller`
+- 持久化只用 `ctx.dataPath`，配置路径用 `ctx.configPath`
+- 鉴权 API 前缀 `/api/Plugin/ext/<plugin-id>/`；无鉴权 `/plugin/<plugin-id>/api/`——`*NoAuth` 仅给外部回调，禁止暴露敏感操作
+- 页面/静态：`ctx.router.page` / `static` / `staticOnMem`
+
+## 包元数据与本地开发
+
+- `package.json` 的 `name` 必须以 `napcat-plugin-` 开头，仅小写字母、数字、短横线；填写 `plugin`、`napcat.tags`、`napcat.minVersion`
+- pnpm 脚本勿命名为 `deploy`（与 `pnpm deploy` 冲突），用 `push`；热重载用模板内 `napcatHmrPlugin` + `pnpm run dev`
+- 调试服务默认无 token，仅本机 `127.0.0.1`；生产环境不要启用 `napcat-plugin-debug`
+- 插件为 ESM；引入 `node-cron` 等 CJS 库时需按官方文档处理 `__dirname`
+
+## 协议与资源兼容（写功能前核对）
+
+- `message_id` 为哈希正整数，约 5000 条后 LRU 失效；已撤回消息无法再取
+- 图片 URL 约 2 小时过期；视频消息 ≤100MB，更大走群文件；音频为 silk，收发依赖转码
+- `markdown` 不能直接发（需双层合并转发）；小程序卡片发送走 `get_mini_app_ark`；戳一戳走事件/接口而非普通消息段
+- 大文件或跨设备优先 Stream API（action 名须以 `stream` 结尾）；`send_like` 注意频率
+- 不确定的 API/事件先查官方兼容表：`/develop/api`、`/develop/event`、`/develop/msg`
