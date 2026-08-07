@@ -42,11 +42,17 @@ export async function noAuthFetch<T = unknown>(path: string, options: RequestIni
         ...options,
         headers: { 'Content-Type': 'application/json', ...options.headers }
     })
+    const text = await res.text()
+    let json: ApiResponse<T> | null = null
+    try {
+        json = text ? JSON.parse(text) as ApiResponse<T> : null
+    } catch { /* 非 JSON */ }
+    // 业务错误（如校验失败）带回 message，避免前端只能看到笼统「保存失败」
     if (!res.ok) {
-        const text = await res.text()
+        if (json && typeof json.code === 'number') return json
         throw new Error(text || `HTTP ${res.status}`)
     }
-    return res.json()
+    return json ?? { code: -1, message: '空响应' }
 }
 
 /**

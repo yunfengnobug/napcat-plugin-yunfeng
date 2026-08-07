@@ -40,11 +40,18 @@ function generateWebhookSecret(): string {
     return crypto.randomBytes(24).toString('hex');
 }
 
-/** 清洗单条自定义 API 规则 */
-function sanitizeCustomApiRule(raw: unknown): CustomApiRule | null {
-    if (!isObject(raw)) return null;
+/** 清洗结果：成功带 rule，失败带原因（避免保存时静默丢规则） */
+export type SanitizeCustomApiRuleResult =
+    | { ok: true; rule: CustomApiRule }
+    | { ok: false; error: string };
+
+/** 清洗单条自定义 API 规则（触发内容、URL 必填） */
+export function sanitizeCustomApiRule(raw: unknown): SanitizeCustomApiRuleResult {
+    if (!isObject(raw)) return { ok: false, error: '规则格式无效' };
     const triggerType = raw.triggerType;
-    if (triggerType !== 'exact' && triggerType !== 'fuzzy' && triggerType !== 'regex') return null;
+    if (triggerType !== 'exact' && triggerType !== 'fuzzy' && triggerType !== 'regex') {
+        return { ok: false, error: '触发方式无效' };
+    }
 
     const methodRaw = String(raw.method || 'GET').toUpperCase();
     const method = (HTTP_METHODS.includes(methodRaw as CustomApiHttpMethod)
@@ -61,14 +68,20 @@ function sanitizeCustomApiRule(raw: unknown): CustomApiRule | null {
 
     const id = typeof raw.id === 'string' && raw.id.trim() ? raw.id.trim() : crypto.randomBytes(8).toString('hex');
     const name = typeof raw.name === 'string' ? raw.name.trim() : '未命名规则';
-    const trigger = typeof raw.trigger === 'string' ? raw.trigger : '';
+    const trigger = typeof raw.trigger === 'string' ? raw.trigger.trim() : '';
     const url = typeof raw.url === 'string' ? raw.url.trim() : '';
-    if (!trigger || !url) return null;
+    if (!trigger) {
+        return { ok: false, error: `「${name || '未命名规则'}」触发内容不能为空` };
+    }
+    if (!url) {
+        return { ok: false, error: `「${name || '未命名规则'}」接口 URL 不能为空` };
+    }
 
     const headers: Record<string, string> = {};
     if (isObject(raw.headers)) {
         for (const [k, v] of Object.entries(raw.headers)) {
             if (typeof v === 'string') headers[k] = v;
+            else if (v != null) headers[k] = String(v);
         }
     }
     // 未配置请求头时补默认 Content-Type
@@ -84,22 +97,25 @@ function sanitizeCustomApiRule(raw: unknown): CustomApiRule | null {
         : [];
 
     return {
-        id,
-        name: name || '未命名规则',
-        enabled: raw.enabled !== false,
-        triggerType: triggerType as CustomApiTriggerType,
-        trigger,
-        method,
-        url,
-        headers,
-        queryTemplate: typeof raw.queryTemplate === 'string' ? raw.queryTemplate : '',
-        bodyType,
-        bodyTemplate: typeof raw.bodyTemplate === 'string' ? raw.bodyTemplate : '',
-        replyTemplate: typeof raw.replyTemplate === 'string' ? raw.replyTemplate : '{{res}}',
-        // 默认关闭「回复当前会话」
-        replyToCurrent: raw.replyToCurrent === true,
-        targetGroupIds,
-        targetUserIds,
+        ok: true,
+        rule: {
+            id,
+            name: name || '未命名规则',
+            enabled: raw.enabled !== false,
+            triggerType: triggerType as CustomApiTriggerType,
+            trigger,
+            method,
+            url,
+            headers,
+            queryTemplate: typeof raw.queryTemplate === 'string' ? raw.queryTemplate : '',
+            bodyType,
+            bodyTemplate: typeof raw.bodyTemplate === 'string' ? raw.bodyTemplate : '',
+            replyTemplate: typeof raw.replyTemplate === 'string' ? raw.replyTemplate : '{{res}}',
+            // 默认关闭「回复当前会话」
+            replyToCurrent: raw.replyToCurrent === true,
+            targetGroupIds,
+            targetUserIds,
+        },
     };
 }
 
@@ -114,6 +130,7 @@ function sanitizeConfig(raw: unknown): PluginConfig {
             webhookSecret: generateWebhookSecret(),
             featureDefaults: { ...DEFAULT_CONFIG.featureDefaults },
             customApiRules: [],
+            customApiOncePerMessage: true,
             groupConfigs: {},
         };
     }
@@ -122,6 +139,7 @@ function sanitizeConfig(raw: unknown): PluginConfig {
         ...DEFAULT_CONFIG,
         featureDefaults: { ...DEFAULT_CONFIG.featureDefaults },
         customApiRules: [],
+        customApiOncePerMessage: true,
         groupConfigs: {},
         webhookSecret: '',
     };
@@ -146,11 +164,16 @@ function sanitizeConfig(raw: unknown): PluginConfig {
         }
     }
 
-    // 自定义 API 规则
+    // 自定义 API：一条消息多规则是否只调用一次（默认 true）
+    if (typeof raw.customApiOncePerMessage === 'boolean') {
+        out.customApiOncePerMessage = raw.customApiOncePerMessage;
+    }
+
+    // 自定义 API 规则（非法项跳过，读盘兼容；写入接口另行严格校验）
     if (Array.isArray(raw.customApiRules)) {
         for (const item of raw.customApiRules) {
-            const rule = sanitizeCustomApiRule(item);
-            if (rule) out.customApiRules.push(rule);
+            const result = sanitizeCustomApiRule(item);
+            if (result.ok) out.customApiRules.push(result.rule);
         }
     }
 

@@ -5,6 +5,7 @@ import type {
     CustomApiBodyType,
     CustomApiHttpMethod,
     CustomApiRule,
+    CustomApiRulesPayload,
     CustomApiTriggerType,
     FriendInfo,
     GroupInfo,
@@ -87,16 +88,21 @@ export default function CustomApiPage() {
     const [headersText, setHeadersText] = useState('{}')
     const [queryText, setQueryText] = useState('{}')
     const [bodyText, setBodyText] = useState('{}')
+    /** 一条消息命中多条规则时只调用一次（默认开） */
+    const [oncePerMessage, setOncePerMessage] = useState(true)
 
     const load = useCallback(async () => {
         setLoading(true)
         try {
             const [rulesRes, groupsRes, friendsRes] = await Promise.all([
-                noAuthFetch<CustomApiRule[]>('/custom-api/rules'),
+                noAuthFetch<CustomApiRulesPayload>('/custom-api/rules'),
                 noAuthFetch<GroupInfo[]>('/groups'),
                 noAuthFetch<FriendInfo[]>('/friends'),
             ])
-            if (rulesRes.code === 0 && rulesRes.data) setRules(rulesRes.data)
+            if (rulesRes.code === 0 && rulesRes.data) {
+                setRules(rulesRes.data.rules || [])
+                setOncePerMessage(rulesRes.data.oncePerMessage !== false)
+            }
             if (groupsRes.code === 0 && groupsRes.data) setGroups(groupsRes.data)
             if (friendsRes.code === 0 && friendsRes.data) setFriends(friendsRes.data)
         } catch {
@@ -155,20 +161,50 @@ export default function CustomApiPage() {
                 setSaving(false)
                 return
             }
+            // 前端先校验：触发内容、URL 不能为空（后端也会再校验，避免静默清空列表）
+            for (let i = 0; i < next.length; i++) {
+                const r = next[i]
+                if (!r.trigger?.trim()) {
+                    showToast(`第 ${i + 1} 条「${r.name || '未命名'}」触发内容不能为空`, 'error')
+                    setSaving(false)
+                    return
+                }
+                if (!r.url?.trim()) {
+                    showToast(`第 ${i + 1} 条「${r.name || '未命名'}」接口 URL 不能为空`, 'error')
+                    setSaving(false)
+                    return
+                }
+            }
             setRules(next)
-            const res = await noAuthFetch<CustomApiRule[]>('/custom-api/rules', {
+            const res = await noAuthFetch<CustomApiRulesPayload>('/custom-api/rules', {
                 method: 'POST',
-                body: JSON.stringify({ rules: next }),
+                body: JSON.stringify({ rules: next, oncePerMessage }),
             })
             if (res.code !== 0) {
                 showToast(res.message || '保存失败', 'error')
                 return
             }
-            if (res.data) setRules(res.data)
+            if (res.data) {
+                setRules(res.data.rules || [])
+                setOncePerMessage(res.data.oncePerMessage !== false)
+                // 若当前编辑项仍在，保持选中
+                if (editingId && !(res.data.rules || []).some((r) => r.id === editingId)) {
+                    setEditingId(res.data.rules?.[0]?.id ?? null)
+                }
+            }
             showToast('规则已保存', 'success')
             setConfirmDeleteId(null)
-        } catch {
-            showToast('保存失败', 'error')
+        } catch (e) {
+            let msg = '保存失败'
+            if (e instanceof Error && e.message) {
+                try {
+                    const parsed = JSON.parse(e.message) as { message?: string }
+                    if (parsed.message) msg = parsed.message
+                } catch {
+                    if (e.message.length < 200) msg = e.message
+                }
+            }
+            showToast(msg, 'error')
         } finally {
             setSaving(false)
         }
@@ -232,24 +268,32 @@ export default function CustomApiPage() {
 
     return (
         <div className="space-y-4">
-            {/* 变量说明：默认收起，点右侧按钮展开 */}
-            <details className="group rounded-xl border border-gray-200/80 dark:border-gray-700/80 bg-white dark:bg-[#1e1e20] overflow-hidden">
-                <summary className="cursor-pointer select-none px-3 py-2.5 flex items-center justify-between gap-3 list-none [&::-webkit-details-marker]:hidden">
-                    <div className="min-w-0">
-                        <div className="text-sm font-medium text-gray-800 dark:text-gray-100">变量说明</div>
-                        <div className="text-[11px] text-gray-400 mt-0.5 truncate">
-                            占位符可用于 URL / Query / Body / 话术（msg、res、正则捕获等）
+            {/* 变量说明：默认收起，主色条更醒目 */}
+            <details className="group rounded-xl border-2 border-primary/35 dark:border-primary/40 bg-primary/[0.06] dark:bg-primary/10 overflow-hidden shadow-sm">
+                <summary className="cursor-pointer select-none px-4 py-3 flex items-center justify-between gap-3 list-none [&::-webkit-details-marker]:hidden hover:bg-primary/[0.08] transition-colors">
+                    <div className="min-w-0 flex items-start gap-3">
+                        <span className="shrink-0 mt-0.5 inline-flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-white text-sm font-bold shadow-sm">
+                            {'{}'}
+                        </span>
+                        <div className="min-w-0">
+                            <div className="text-base font-semibold text-gray-900 dark:text-white">
+                                变量说明
+                                <span className="ml-2 text-xs font-normal text-primary">推荐先看</span>
+                            </div>
+                            <div className="text-xs text-gray-600 dark:text-gray-300 mt-0.5 truncate">
+                                占位符可用于 URL / Query / Body / 话术（如 {'{{msg}}'}、{'{{id}}'}、{'{{res.字段}}'}）
+                            </div>
                         </div>
                     </div>
                     <span
-                        className="shrink-0 inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium
-                            border border-primary/40 bg-primary/10 text-primary
-                            group-open:bg-primary group-open:text-white group-open:border-primary
-                            hover:bg-primary/20 group-open:hover:bg-primary/90 transition-colors"
+                        className="shrink-0 inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold
+                            bg-primary text-white shadow-md shadow-primary/25
+                            hover:brightness-105 active:scale-[0.98] transition
+                            group-open:bg-white group-open:text-primary group-open:border-2 group-open:border-primary"
                     >
-                        <span className="group-open:hidden">展开</span>
+                        <span className="group-open:hidden">展开查看</span>
                         <span className="hidden group-open:inline">收起</span>
-                        <span className="text-[10px] leading-none group-open:rotate-180 transition-transform">▾</span>
+                        <span className="text-xs leading-none group-open:rotate-180 transition-transform">▾</span>
                     </span>
                 </summary>
                 <div className="px-4 pb-3.5 pt-3 text-xs text-gray-600 dark:text-gray-300 leading-relaxed border-t border-gray-100 dark:border-gray-800/80 grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -272,12 +316,21 @@ export default function CustomApiPage() {
                 </div>
             </details>
 
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-3">
                 <button className="btn btn-primary text-xs" onClick={addRule}>新增规则</button>
                 <button className="btn btn-ghost text-xs" onClick={saveAll} disabled={saving}>
                     {saving ? '保存中...' : '保存全部'}
                 </button>
-                <span className="text-xs text-gray-400 ml-1">共 {rules.length} 条</span>
+                <label className="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200 cursor-pointer select-none">
+                    <input
+                        type="checkbox"
+                        className="rounded border-gray-300"
+                        checked={oncePerMessage}
+                        onChange={(e) => setOncePerMessage(e.target.checked)}
+                    />
+                    一条消息只调用一次
+                </label>
+                <span className="text-xs text-gray-400">共 {rules.length} 条</span>
             </div>
 
             <div className="flex flex-col lg:flex-row gap-4 min-h-[480px]">
@@ -393,12 +446,13 @@ export default function CustomApiPage() {
                                             <option value="regex">正则</option>
                                         </select>
                                     </Field>
-                                    <Field label="触发内容" className="sm:col-span-7">
+                                    <Field label="触发内容（必填）" className="sm:col-span-7">
                                         <input
                                             className="input-field font-mono text-sm"
                                             value={editing.trigger}
                                             onChange={(e) => updateRule(editing.id, { trigger: e.target.value })}
                                             placeholder={editing.triggerType === 'regex' ? '例如：天气\\s*(?<city>.+)' : '关键词'}
+                                            required
                                         />
                                     </Field>
                                 </div>

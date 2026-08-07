@@ -41,6 +41,13 @@ export interface CustomApiRule {
     targetUserIds: string[]
 }
 
+/** 自定义 API 规则接口返回体 */
+export interface CustomApiRulesPayload {
+    rules: CustomApiRule[]
+    /** 一条消息命中多条规则时是否只调用一次，默认 true */
+    oncePerMessage: boolean
+}
+
 export interface PluginConfig {
     enabled: boolean
     debug: boolean

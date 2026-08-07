@@ -19,6 +19,8 @@ export const DEFAULT_CONFIG: PluginConfig = {
         customApi: false,
     },
     customApiRules: [],
+    /** 一条消息命中多条关键词/规则时，默认只调用一次 */
+    customApiOncePerMessage: true,
     groupConfigs: {},
 };
 

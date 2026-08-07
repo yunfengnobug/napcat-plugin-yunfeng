@@ -12,6 +12,8 @@ NapCat 插件：群授权 / 开机门禁为基础，Webhook 通知推群可跑�
 6. **Webhook 通知**：外部后台 POST 通知（不传群号），插件推送到所有「已授权 + 开机 + 开启通知」的群
 7. **自定义 API**：消息按精确词 / 模糊词 / 正则触发 → 插件请求外部接口 → 按模板拼话术 → 发到指定群/好友（群侧需开启该功能）
    - 请求：GET/POST/PUT/PATCH/DELETE/HEAD；Query；Body 支持 JSON / form-urlencoded / multipart / raw
+   - 触发内容、接口 URL 必填；保存校验失败时不会静默清空规则列表
+   - 「一条消息只调用一次」默认开启：同条消息命中多条规则时只执行第一条；关闭后可依次触发多条
    - 新建规则默认请求头：`Content-Type: application/json`（也可自行改）
    - 模板变量（可写在 URL / Query / Body / 话术）：
      - `{{msg}}`：用户触发时的整条原始消息
