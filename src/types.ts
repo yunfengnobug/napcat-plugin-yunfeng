@@ -39,8 +39,52 @@ export type CustomApiHttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 
 export type CustomApiBodyType = 'none' | 'json' | 'form' | 'multipart' | 'raw';
 
 /**
+ * 单条预期条件
+ * - value 非空：字段值须等于期望值（可写 {{msg}} / {{id}} / {{res1.x}} 等，比较前渲染）
+ * - value 为空：仅要求该 key 存在即通过
+ */
+export interface CustomApiExpectedCondition {
+    /** 须以本步 resN 开头：第 1 步 res1.xxx，第 2 步 res2.xxx（如 res1.success） */
+    path: string;
+    /** 期望值；空字符串表示只校验路径存在 */
+    value: string;
+}
+
+/**
+ * 自定义 API 链中的单步请求
+ * 按顺序串行执行；第 n 步返回对象为 resN（亦可用 res 表示最近一步）
+ */
+export interface CustomApiStep {
+    /** 步骤 ID */
+    id: string;
+    /** 步骤显示名 */
+    name: string;
+    /** 请求方法 */
+    method: CustomApiHttpMethod;
+    /** 接口 URL，可用 {{msg}} / {{res1.x}} 等占位 */
+    url: string;
+    /** 请求头 */
+    headers?: Record<string, string>;
+    /** Query 参数模板（JSON 对象字符串） */
+    queryTemplate?: string;
+    /** 请求体编码方式 */
+    bodyType: CustomApiBodyType;
+    /** 请求体/表单模板 */
+    bodyTemplate?: string;
+    /** 超时毫秒，默认 8000 */
+    timeoutMs: number;
+    /**
+     * 预期返回条件（最多 2 条）
+     * 例：res1.success=true；res1.token 留空=只要存在；value 可写 {{id}}
+     */
+    expectedConditions: CustomApiExpectedCondition[];
+    /** 多条预期条件之间的逻辑：且 / 或，默认 and */
+    expectedLogic: 'and' | 'or';
+}
+
+/**
  * 一条自定义 API 规则
- * 消息命中触发词后请求外部接口，用返回值按模板拼话术，发到指定群/好友
+ * 消息命中触发词后按 steps 串行请求外部接口，用返回值按模板拼话术发送
  */
 export interface CustomApiRule {
     /** 规则 ID */
@@ -53,29 +97,18 @@ export interface CustomApiRule {
     triggerType: CustomApiTriggerType;
     /** 触发内容（关键词或正则） */
     trigger: string;
-    /** 请求方法 */
-    method: CustomApiHttpMethod;
-    /** 外部接口 URL，可用 {{msg}} {{user_id}} {{group_id}} 等占位 */
-    url: string;
-    /** 请求头（普通对象） */
-    headers?: Record<string, string>;
+    /** 串行请求步骤（至少一个） */
+    steps: CustomApiStep[];
     /**
-     * Query 参数模板（JSON 对象字符串，值可含占位符）
-     * 例：{"q":"{{msg}}","uid":"{{user_id}}"}
+     * 严格中止（可选，默认开启）
+     * 超时 / 预期返回值不符 / 话术变量缺失或为空时：中止且不发送
+     * （请求 URL/Body 等模板不做预检，缺变量按空串照常请求）
      */
-    queryTemplate?: string;
-    /** 请求体编码方式 */
-    bodyType: CustomApiBodyType;
-    /**
-     * 请求体/表单参数模板
-     * - json/raw：整段文本模板
-     * - form/multipart：JSON 对象模板，键值均可含占位符
-     */
-    bodyTemplate?: string;
+    strictAbort: boolean;
     /**
      * 话术模板
-     * 接口返回对象为 res：{{res}} / {{res.字段}}
-     * 正则捕获：整段 {{match}}；第 n 个括号 {{match1}}…；命名分组 (?&lt;city&gt;…) → {{city}}
+     * 多步返回：{{res1}} {{res2.字段}}；{{res}} 表示最后一步
+     * 正则捕获：{{match}} / {{match1}} / 命名组 {{city}}
      */
     replyTemplate: string;
     /** 是否同时回复当前会话 */

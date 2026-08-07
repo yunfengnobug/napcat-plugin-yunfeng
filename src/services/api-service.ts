@@ -22,6 +22,7 @@ import type {
 } from 'napcat-types/napcat-onebot/network/plugin/types';
 import type { OB11PostSendMsg } from 'napcat-types/napcat-onebot';
 import { pluginState, sanitizeCustomApiRule } from '../core/state';
+import { testCustomApiRule } from '../handlers/custom-api-handler';
 import type { CustomApiRule, FeatureFlags, GroupConfig, NotifyWebhookBody, PluginConfig } from '../types';
 
 /** 格式化授权到期时间展示 */
@@ -297,6 +298,44 @@ export function registerApiRoutes(ctx: NapCatPluginContext): void {
             });
         } catch (err) {
             ctx.logger.error('保存自定义 API 规则失败:', err);
+            res.status(500).json({ code: -1, message: String(err) });
+        }
+    });
+
+    /**
+     * 试跑自定义 API（不发送消息）
+     * Body: { rule, untilStepIndex?, mockMsg?, mockUserId?, mockGroupId?, mockNickname? }
+     */
+    router.postNoAuth('/custom-api/test', async (req, res) => {
+        try {
+            const body = req.body as {
+                rule?: unknown;
+                untilStepIndex?: unknown;
+                mockMsg?: unknown;
+                mockUserId?: unknown;
+                mockGroupId?: unknown;
+                mockNickname?: unknown;
+            } | undefined;
+            if (!body?.rule) {
+                return res.status(400).json({ code: -1, message: '参数错误：需要 rule' });
+            }
+            const cleaned = sanitizeCustomApiRule(body.rule);
+            if (!cleaned.ok) {
+                return res.status(400).json({ code: -1, message: cleaned.error });
+            }
+            const untilStepIndex = typeof body.untilStepIndex === 'number' && Number.isFinite(body.untilStepIndex)
+                ? Math.floor(body.untilStepIndex)
+                : undefined;
+            const data = await testCustomApiRule(cleaned.rule, {
+                untilStepIndex,
+                mockMsg: typeof body.mockMsg === 'string' ? body.mockMsg : undefined,
+                mockUserId: typeof body.mockUserId === 'string' ? body.mockUserId : undefined,
+                mockGroupId: typeof body.mockGroupId === 'string' ? body.mockGroupId : undefined,
+                mockNickname: typeof body.mockNickname === 'string' ? body.mockNickname : undefined,
+            });
+            res.json({ code: 0, message: 'ok', data });
+        } catch (err) {
+            ctx.logger.error('试跑自定义 API 失败:', err);
             res.status(500).json({ code: -1, message: String(err) });
         }
     });
