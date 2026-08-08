@@ -401,12 +401,17 @@ git push origin v1.0.0
 
 ### 2. 自动更新插件索引（`update-index.yml`）
 
-Release 发布后，会自动向 [napcat-plugin-index](https://github.com/NapNeko/napcat-plugin-index) 提交 PR 更新插件索引，**无需手动编辑 `plugins.v4.json`**。
+Release 发布后，会**并行**向以下索引提交 PR（矩阵任务，互不影响），**无需手动编辑 `plugins.v4.json`**：
+
+| 索引 | 仓库 |
+|------|------|
+| 官方 | [NapNeko/napcat-plugin-index](https://github.com/NapNeko/napcat-plugin-index) |
+| 社区 | [HolyFoxTeam/napcat-plugin-community-index](https://github.com/HolyFoxTeam/napcat-plugin-community-index) |
 
 **完整流程：**
 
 ```
-push tag → release.yml 构建发布 → update-index.yml 自动提交 PR → 索引仓库 CI 自动审核 → 维护者合并
+push tag → release.yml 构建发布 → update-index.yml 并行提 PR → 各索引仓库审核 → 维护者合并
 ```
 
 **配置步骤：**
@@ -436,9 +441,7 @@ push tag → release.yml 构建发布 → update-index.yml 自动提交 PR → �
    | `homepage` | 插件主页 URL | 仓库地址 |
 
 2. **配置仓库 Secret**：在插件仓库 Settings > Secrets and variables > Actions 中添加：
-   - `INDEX_PAT`：一个有 `public_repo` 权限的 GitHub Personal Access Token，用于向索引仓库提交 PR
-
-3. **修改 `update-index.yml`**（可选）：如果索引仓库不是 `NapNeko/napcat-plugin-index`，修改 `INDEX_REPO` 环境变量
+   - `INDEX_PAT`：有 `public_repo` 权限的 GitHub Personal Access Token，用于 fork 上述索引并提 PR
 
 > 💡 配置完成后，每次发布新版本只需 `git tag v1.x.x && git push origin v1.x.x`，一切自动完成！
 

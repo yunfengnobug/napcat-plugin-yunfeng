@@ -15,16 +15,25 @@ permissions:
   contents: write
 
 env:
-  # ⚡ 目标索引仓库（NapNeko 组织下的插件索引）
-  INDEX_REPO: NapNeko/napcat-plugin-index
-  INDEX_REPO_NAME: napcat-plugin-index
   INDEX_BRANCH: main
   INDEX_FILE: plugins.v4.json
 
 jobs:
   update-index:
-    name: 提交插件索引更新 PR
+    name: 提交索引 PR（${{ matrix.index.label }}）
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        index:
+          # 官方插件市场索引
+          - repo: NapNeko/napcat-plugin-index
+            name: napcat-plugin-index
+            label: 官方索引
+          # 社区插件索引
+          - repo: HolyFoxTeam/napcat-plugin-community-index
+            name: napcat-plugin-community-index
+            label: 社区索引
 
     steps:
       - name: Checkout plugin repo
@@ -83,6 +92,7 @@ jobs:
 
           echo "📦 Plugin: $PLUGIN_ID v$CLEAN_VERSION"
           echo "📥 Download: $DOWNLOAD_URL"
+          echo "📚 目标索引: ${{ matrix.index.repo }}"
 
       - name: Verify release asset exists
         run: |
@@ -118,7 +128,7 @@ jobs:
           fi
           echo "pat_user=$PAT_USER" >> $GITHUB_OUTPUT
 
-          FORK_REPO="${PAT_USER}/${{ env.INDEX_REPO_NAME }}"
+          FORK_REPO="${PAT_USER}/${{ matrix.index.name }}"
           echo "fork_repo=$FORK_REPO" >> $GITHUB_OUTPUT
           echo "👤 PAT 用户: $PAT_USER"
           echo "🍴 Fork 仓库: $FORK_REPO"
@@ -135,7 +145,7 @@ jobs:
             FORK_RESULT=$(curl -sS -X POST \
               -H "Authorization: token ${GH_TOKEN}" \
               -H "Accept: application/vnd.github+json" \
-              "https://api.github.com/repos/${{ env.INDEX_REPO }}/forks" \
+              "https://api.github.com/repos/${{ matrix.index.repo }}/forks" \
               -d '{"default_branch_only": true}')
 
             FORK_FULL_NAME=$(echo "$FORK_RESULT" | jq -r '.full_name')
@@ -167,7 +177,7 @@ jobs:
       - name: Checkout index repo
         uses: actions/checkout@v4
         with:
-          repository: ${{ env.INDEX_REPO }}
+          repository: ${{ matrix.index.repo }}
           ref: ${{ env.INDEX_BRANCH }}
           path: plugin-index
           token: ${{ secrets.INDEX_PAT }}
@@ -218,7 +228,7 @@ jobs:
             console.log('✅ plugins.v4.json 已更新');
           "
 
-      # ── 通过 fork 提交 PR 到官方索引仓库 ─────────────────────────
+      # ── 通过 fork 提交 PR 到对应索引仓库 ─────────────────────────
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v6
         with:
@@ -234,6 +244,7 @@ jobs:
 
             | 字段 | 值 |
             |------|-----|
+            | **目标索引** | `${{ matrix.index.repo }}`（${{ matrix.index.label }}） |
             | **插件 ID** | `${{ steps.meta.outputs.plugin_id }}` |
             | **插件名称** | ${{ steps.meta.outputs.plugin_name }} |
             | **版本** | v${{ steps.meta.outputs.version }} |
