@@ -205,7 +205,7 @@ export default function CustomApiPage() {
                 if (!path) return ''
                 return `${stepResKey}.${path}`
             }
-            // value 可空：仅校验 key 存在；非空可写 {{变量}}
+            // value 可空：仅校验 key 存在；非空可写 {{res1.xxx}} 等
             const expectedConditions = [
                 { path: normalizeExpectPath(expectPath1), value: expectValue1.trim() },
                 { path: normalizeExpectPath(expectPath2), value: expectValue2.trim() },
@@ -830,7 +830,7 @@ export default function CustomApiPage() {
                                                             />
                                                             {payloadKind === 'query' ? (
                                                                 <JsonField
-                                                                    label={`Query 参数（本步结果 → res${stepIndex + 1}）`}
+                                                                    label="Query 参数（将自动拼接到 URL 后面）"
                                                                     value={queryText}
                                                                     onChange={setQueryText}
                                                                     onFormat={() => formatField('query')}
@@ -851,8 +851,18 @@ export default function CustomApiPage() {
                                                                     预期返回值（可选，最多 2 条）
                                                                 </div>
                                                                 <p className="text-xs text-gray-400 mb-2">
-                                                                    本步 <code className="text-primary">res{stepIndex + 1}</code>
-                                                                    ；value 可写 <code className="text-primary">{'{{id}}'}</code> 等变量；
+                                                                    本步路径用 <code className="text-primary">res{stepIndex + 1}.字段</code>
+                                                                    ；value 可写字面量，或{' '}
+                                                                    {stepIndex === 0 ? (
+                                                                        <code className="text-primary">{'{{res1.xxx}}'}</code>
+                                                                    ) : (
+                                                                        <>
+                                                                            <code className="text-primary">{'{{res1.xxx}}'}</code>
+                                                                            {' '}～{' '}
+                                                                            <code className="text-primary">{`{{res${stepIndex + 1}.xxx}}`}</code>
+                                                                        </>
+                                                                    )}
+                                                                    （引用第 1～{stepIndex + 1} 步返回）；
                                                                     <strong className="font-medium text-gray-500 dark:text-gray-300">留空</strong>则只要该 key 存在即通过
                                                                 </p>
                                                                 {/* key/value 均有最短宽度，空间够时在组内平分 */}
@@ -869,7 +879,7 @@ export default function CustomApiPage() {
                                                                             className="input-field font-mono text-sm !w-0 flex-1 min-w-[6rem]"
                                                                             value={expectValue1}
                                                                             onChange={(e) => setExpectValue1(e.target.value)}
-                                                                            placeholder="空=存在 / true / {{id}}"
+                                                                            placeholder="留空=存在"
                                                                         />
                                                                     </div>
                                                                     <select
@@ -892,7 +902,9 @@ export default function CustomApiPage() {
                                                                             className="input-field font-mono text-sm !w-0 flex-1 min-w-[6rem]"
                                                                             value={expectValue2}
                                                                             onChange={(e) => setExpectValue2(e.target.value)}
-                                                                            placeholder="空=存在 / {{msg}}"
+                                                                            placeholder={stepIndex > 0
+                                                                                ? `留空=存在/{{res${stepIndex}.xxx}}`
+                                                                                : '留空=存在'}
                                                                         />
                                                                     </div>
                                                                 </div>
