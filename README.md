@@ -13,14 +13,15 @@ NapCat 插件：群授权 / 开机门禁为基础，Webhook 通知推群可跑�
    - Body（除 `secret`）绑定为 `res`：文本用 `{{res.字段}}` / `{{res.a.b}}`
    - 媒体标记：`{{image:res.cover}}` / `{{video:res.demo}}` / `{{file:res.path}}`（值为空则跳过；`file` 可为 URL / 路径 / base64）
 7. **自定义 API**：消息按精确词 / 模糊词 / 正则触发 → 可串行多个外部接口 → 按模板拼话术 → 发到指定群/好友（群侧需开启该功能）
-   - 请求：GET/POST/PUT/PATCH/DELETE/HEAD；Query；Body 支持 JSON / form-urlencoded / multipart / raw
+   - 请求：GET/POST/PUT/PATCH/DELETE/HEAD；Query 参数直接写在 URL（如 `?q={{msg}}`）；Body 支持 JSON / form-urlencoded / multipart / raw（GET/HEAD 无 Body）
    - **多接口串行**：第 n 步返回为 `resN`（如 `{{res1.token}}` 给第二步用）；必须等上一步结束才请求下一步
    - 每步可配超时（默认 8000ms）与预期返回值（最多 2 条，且/或；第 1 步用 `res1.xxx`，第 2 步用 `res2.xxx`）：value 可写字面量或 `{{res1.xxx}}` / `{{res2.xxx}}` 等；**留空**则仅要求该 key 存在即通过。「严格中止」默认开：只按**实际结果**拦截（超时 / 预期不符 / 话术变量缺失），请求模板缺变量按空串照常请求
    - 触发内容、每步 URL 必填；保存校验失败时不会静默清空规则列表
    - 「每条消息多次触发关键词只调用一次」默认开启：同条消息命中多条规则时只执行第一条
    - 新建规则默认请求头：`Content-Type: application/json`（也可自行改）
-   - **测试接口**：WebUI 可试跑「到此步」或「全部接口」，查看触发是否命中、`{{match}}` / 捕获组、各步 HTTP 状态、返回 JSON/文本与话术预览（不真正发消息）；支持填写模拟消息
-   - 模板变量（可写在 URL / Query / Body / 请求头 / 话术）：
+   - **测试接口**：WebUI 可试跑「到此步」或「全部接口」；模拟消息必填（不自动填触发词）；查看触发匹配、各步返回与话术预览（不真正发消息）
+   - 新建规则话术模板默认 `{{res}}`（最近一步返回）
+   - 模板变量（可写在 URL / Body / 请求头 / 话术）：
      - `{{msg}}`：用户触发时的整条原始消息
      - `{{user_id}}`：发送者 QQ；`{{group_id}}`：群号（私聊为空）；`{{nickname}}`：发送者昵称
      - `{{res1}}` / `{{res2.字段}}`：各步返回；`{{res}}` 表示最近一步（兼容）

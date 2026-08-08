@@ -320,6 +320,10 @@ export function registerApiRoutes(ctx: NapCatPluginContext): void {
             if (!body?.rule) {
                 return res.status(400).json({ code: -1, message: '参数错误：需要 rule' });
             }
+            const mockMsg = typeof body.mockMsg === 'string' ? body.mockMsg.trim() : '';
+            if (!mockMsg) {
+                return res.status(400).json({ code: -1, message: '请填写模拟消息' });
+            }
             const cleaned = sanitizeCustomApiRule(body.rule);
             if (!cleaned.ok) {
                 return res.status(400).json({ code: -1, message: cleaned.error });
@@ -329,7 +333,7 @@ export function registerApiRoutes(ctx: NapCatPluginContext): void {
                 : undefined;
             const data = await testCustomApiRule(cleaned.rule, {
                 untilStepIndex,
-                mockMsg: typeof body.mockMsg === 'string' ? body.mockMsg : undefined,
+                mockMsg,
                 mockUserId: typeof body.mockUserId === 'string' ? body.mockUserId : undefined,
                 mockGroupId: typeof body.mockGroupId === 'string' ? body.mockGroupId : undefined,
                 mockNickname: typeof body.mockNickname === 'string' ? body.mockNickname : undefined,

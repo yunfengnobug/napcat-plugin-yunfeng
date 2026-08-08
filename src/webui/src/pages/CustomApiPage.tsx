@@ -30,9 +30,8 @@ function newStep(index: number): CustomApiStep {
         method: 'GET',
         url: 'https://example.com/api',
         headers: { ...DEFAULT_HEADERS },
-        queryTemplate: index === 0
-            ? '{\n  "q": "{{msg}}"\n}'
-            : '{\n  "token": "{{res1.token}}"\n}',
+        // Query 不再单独配置，参数直接写在 URL（如 ?q={{msg}}）
+        queryTemplate: '',
         bodyType: 'none',
         bodyTemplate: '{\n  "msg": "{{msg}}"\n}',
         timeoutMs: DEFAULT_STEP_TIMEOUT_MS,
@@ -50,7 +49,7 @@ function newRule(): CustomApiRule {
         trigger: '',
         steps: [newStep(0)],
         strictAbort: true,
-        replyTemplate: '{{res1.message}}',
+        replyTemplate: '{{res}}',
         replyToCurrent: false,
         targetGroupIds: [],
         targetUserIds: [],
@@ -223,7 +222,8 @@ export default function CustomApiPage() {
                 steps[idx] = {
                     ...steps[idx],
                     headers,
-                    queryTemplate: queryText,
+                    // 不再使用独立 Query 框，参数写在 URL；清空历史 queryTemplate
+                    queryTemplate: '',
                     bodyTemplate: bodyText,
                     expectedConditions: expectedConditions.slice(0, 2),
                     expectedLogic: expectLogic,
@@ -235,7 +235,7 @@ export default function CustomApiPage() {
             showToast('请求头 JSON 格式错误', 'error')
             return null
         }
-    }, [headersText, queryText, bodyText, expectPath1, expectValue1, expectPath2, expectValue2, expectLogic, timeoutDraft])
+    }, [headersText, bodyText, expectPath1, expectValue1, expectPath2, expectValue2, expectLogic, timeoutDraft])
 
     useEffect(() => {
         if (!editing || !editingStep) return
@@ -300,6 +300,10 @@ export default function CustomApiPage() {
             showToast('请先填写触发内容', 'error')
             return
         }
+        if (!mockMsg.trim()) {
+            showToast('请填写模拟消息', 'error')
+            return
+        }
         const end = untilStepIndex ?? (rule.steps?.length || 1) - 1
         for (let j = 0; j <= end; j++) {
             if (!rule.steps?.[j]?.url?.trim()) {
@@ -316,7 +320,7 @@ export default function CustomApiPage() {
                 body: JSON.stringify({
                     rule,
                     untilStepIndex,
-                    mockMsg: mockMsg.trim() || rule.trigger,
+                    mockMsg: mockMsg.trim(),
                 }),
             })
             if (res.code !== 0 || !res.data) {
@@ -767,28 +771,24 @@ export default function CustomApiPage() {
                                                                         <option value="HEAD">HEAD</option>
                                                                     </select>
                                                                 </Field>
-                                                                <Field label="请求体类型" className="w-[7.5rem] shrink-0">
-                                                                    <select
-                                                                        className="input-field"
-                                                                        value={payloadKind}
-                                                                        onChange={(e) => {
-                                                                            const kind = e.target.value as PayloadKind
-                                                                            if (kind !== 'query' && !bodyAllowed) {
-                                                                                showToast('GET/HEAD 仅支持 Query', 'warning')
-                                                                                return
-                                                                            }
-                                                                            updateStep(editing.id, stepIndex, {
-                                                                                bodyType: kind === 'query' ? 'none' : kind,
-                                                                            })
-                                                                        }}
-                                                                    >
-                                                                        <option value="query">Query</option>
-                                                                        <option value="json" disabled={!bodyAllowed}>JSON Body</option>
-                                                                        <option value="form" disabled={!bodyAllowed}>form-urlencoded</option>
-                                                                        <option value="multipart" disabled={!bodyAllowed}>multipart</option>
-                                                                        <option value="raw" disabled={!bodyAllowed}>原始文本</option>
-                                                                    </select>
-                                                                </Field>
+                                                                {/* GET/HEAD 无请求体，参数直接写在 URL */}
+                                                                {bodyAllowed && (
+                                                                    <Field label="请求体类型" className="w-[7.5rem] shrink-0">
+                                                                        <select
+                                                                            className="input-field"
+                                                                            value={payloadKind === 'query' ? 'json' : payloadKind}
+                                                                            onChange={(e) => {
+                                                                                const kind = e.target.value as Exclude<PayloadKind, 'query'>
+                                                                                updateStep(editing.id, stepIndex, { bodyType: kind })
+                                                                            }}
+                                                                        >
+                                                                            <option value="json">JSON Body</option>
+                                                                            <option value="form">form-urlencoded</option>
+                                                                            <option value="multipart">multipart</option>
+                                                                            <option value="raw">原始文本</option>
+                                                                        </select>
+                                                                    </Field>
+                                                                )}
                                                                 <Field label="超时(毫秒)" className="w-[5.5rem] shrink-0">
                                                                     <input
                                                                         type="number"
@@ -818,7 +818,11 @@ export default function CustomApiPage() {
                                                                         className="input-field font-mono text-sm"
                                                                         value={editingStep.url}
                                                                         onChange={(e) => updateStep(editing.id, stepIndex, { url: e.target.value })}
-                                                                        placeholder={stepIndex > 0 ? '可用 {{res1.xxx}}' : 'https://...'}
+                                                                        placeholder={
+                                                                            stepIndex > 0
+                                                                                ? 'https://...?token={{res1.token}}'
+                                                                                : 'https://...?q={{msg}}'
+                                                                        }
                                                                     />
                                                                 </Field>
                                                             </div>
@@ -829,17 +833,14 @@ export default function CustomApiPage() {
                                                                 onChange={setHeadersText}
                                                                 onFormat={() => formatField('headers')}
                                                             />
-                                                            {payloadKind === 'query' ? (
+                                                            {/* GET/HEAD：无 Body，参数写在 URL；其它方法编辑请求体 */}
+                                                            {bodyAllowed && (
                                                                 <JsonField
-                                                                    label="Query 参数（将自动拼接到 URL 后面）"
-                                                                    value={queryText}
-                                                                    onChange={setQueryText}
-                                                                    onFormat={() => formatField('query')}
-                                                                    hint={stepIndex > 0 ? '可引用上一步，如 {"id":"{{res1.data.id}}"}' : '例如 {"q":"{{msg}}"}'}
-                                                                />
-                                                            ) : (
-                                                                <JsonField
-                                                                    label={payloadKind === 'form' || payloadKind === 'multipart' ? '表单字段' : '请求体模板'}
+                                                                    label={
+                                                                        (payloadKind === 'form' || payloadKind === 'multipart')
+                                                                            ? '表单字段'
+                                                                            : '请求体模板'
+                                                                    }
                                                                     value={bodyText}
                                                                     onChange={setBodyText}
                                                                     onFormat={payloadKind === 'raw' ? undefined : () => formatField('body')}
@@ -947,12 +948,12 @@ export default function CustomApiPage() {
                                 <p className="text-xs text-gray-400 mb-3">
                                     由插件服务端发起真实请求（不发群/私聊）。多步时会串行执行；开启严格中止时，失败会停在该步。
                                 </p>
-                                <Field label="模拟消息（填充 {{msg}} / 正则捕获，默认同触发内容）">
+                                <Field label="模拟消息（必填，用于 {{msg}} / 正则捕获）">
                                     <input
                                         className="input-field font-mono text-sm"
                                         value={mockMsg}
                                         onChange={(e) => setMockMsg(e.target.value)}
-                                        placeholder={editing.trigger || '例如：查天气 北京'}
+                                        placeholder="请输入测试消息"
                                     />
                                 </Field>
                                 <div className="flex flex-wrap gap-2 mt-3">
@@ -1106,7 +1107,7 @@ export default function CustomApiPage() {
                                         className="input-field font-mono text-sm min-h-[80px] leading-relaxed"
                                         value={editing.replyTemplate}
                                         onChange={(e) => updateRule(editing.id, { replyTemplate: e.target.value })}
-                                        placeholder="例如：房间码 {{res2.code}}（来自第二步）"
+                                        placeholder="默认 {{res}}；也可写 {{res1.字段}} / {{res2.code}}"
                                     />
                                 </Field>
 

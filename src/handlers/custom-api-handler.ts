@@ -756,7 +756,7 @@ export async function testCustomApiRule(
             : steps.length - 1,
     );
 
-    const mockMsg = options?.mockMsg?.trim() || rule.trigger || '测试消息';
+    const mockMsg = (options?.mockMsg ?? '').trim();
     const trigger = matchTrigger(mockMsg, rule);
     /** 试跑时附带的触发匹配信息（供 WebUI 展示） */
     const matchInfo: CustomApiTestMatchInfo = {
