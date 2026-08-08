@@ -13,6 +13,11 @@ export const DEFAULT_CONFIG: PluginConfig = {
     commandPrefix: '#yf',
     cooldownSeconds: 60,
     webhookSecret: '',
+    /**
+     * 默认话术：兼容旧调用方 title/content/url；
+     * 可在 WebUI 改为任意 {{res.字段}} / {{image:res.xxx}}
+     */
+    notifyTemplate: '【{{res.title}}】\n{{res.content}}\n{{res.url}}',
     /** 新群首次开机时写入的功能初始值（不影响已开启群） */
     featureDefaults: {
         notify: true,

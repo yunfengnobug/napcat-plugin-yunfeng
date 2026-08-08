@@ -137,6 +137,12 @@ export interface PluginConfig {
     /** 外部 Webhook 密钥（请求头 X-Webhook-Secret 或 body.secret） */
     webhookSecret: string;
     /**
+     * Webhook 通知话术模板
+     * body（除 secret）绑定为 res：{{res.字段}} / {{res.a.b}}
+     * 媒体：{{image:res.cover}} / {{video:res.demo}} / {{file:res.path}}
+     */
+    notifyTemplate: string;
+    /**
      * 功能全局初始设置
      * 仅在群「首次开机」时写入该群作为初始值；之后改全局不影响已开启过的群
      */
@@ -173,18 +179,16 @@ export interface GroupConfig {
 // ==================== Webhook ====================
 
 /**
- * 外部后台推送通知的简易字段（后续可扩展）
- * 不传群号：由插件按「已授权 + 开机 + 通知开启」的群列表自行推送
+ * 外部后台推送通知 Body
+ * - 不传群号：由插件按「已授权 + 开机 + 通知开启」的群列表自行推送
+ * - 除 secret 外任意字段都会绑定为模板中的 res（如 {{res.aaa}}）
+ * - 密钥也可用请求头 X-Webhook-Secret
  */
 export interface NotifyWebhookBody {
-    /** 标题（可选） */
-    title?: string;
-    /** 详情正文 */
-    content?: string;
-    /** 相关链接（可选） */
-    url?: string;
     /** 密钥（也可用请求头 X-Webhook-Secret） */
     secret?: string;
+    /** 业务字段：与 notifyTemplate 中 {{res.xxx}} 对应 */
+    [key: string]: unknown;
 }
 
 // ==================== API 响应 ====================

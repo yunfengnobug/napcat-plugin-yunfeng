@@ -9,7 +9,9 @@ NapCat 插件：群授权 / 开机门禁为基础，Webhook 通知推群可跑�
 3. **门禁**：仅当「全局启用 + 已授权且未过期 + 已开机」时，才处理该群后续功能；否则直接跳过
 4. **全局设置**：单独页面；只影响尚未开启过的群——它们**首次开机**时写入功能初始值；已开启群不受影响
 5. **群管理**：左侧群列表，右侧配置该群的基础（开机/授权）与各功能
-6. **Webhook 通知**：外部后台 POST 通知（不传群号），插件推送到所有「已授权 + 开机 + 开启通知」的群
+6. **Webhook 通知**：外部后台 POST 任意 JSON（不传群号），按 WebUI 配置的 `notifyTemplate` 渲染后推送到所有「已授权 + 开机 + 开启通知」的群
+   - Body（除 `secret`）绑定为 `res`：文本用 `{{res.字段}}` / `{{res.a.b}}`
+   - 媒体标记：`{{image:res.cover}}` / `{{video:res.demo}}` / `{{file:res.path}}`（值为空则跳过；`file` 可为 URL / 路径 / base64）
 7. **自定义 API**：消息按精确词 / 模糊词 / 正则触发 → 可串行多个外部接口 → 按模板拼话术 → 发到指定群/好友（群侧需开启该功能）
    - 请求：GET/POST/PUT/PATCH/DELETE/HEAD；Query；Body 支持 JSON / form-urlencoded / multipart / raw
    - **多接口串行**：第 n 步返回为 `resN`（如 `{{res1.token}}` 给第二步用）；必须等上一步结束才请求下一步
@@ -18,10 +20,14 @@ NapCat 插件：群授权 / 开机门禁为基础，Webhook 通知推群可跑�
    - 「每条消息多次触发关键词只调用一次」默认开启：同条消息命中多条规则时只执行第一条
    - 新建规则默认请求头：`Content-Type: application/json`（也可自行改）
    - **测试接口**：WebUI 可试跑「到此步」或「全部接口」，查看触发是否命中、`{{match}}` / 捕获组、各步 HTTP 状态、返回 JSON/文本与话术预览（不真正发消息）；支持填写模拟消息
-   - 模板变量（可写在 URL / Query / Body / 话术）：
+   - 模板变量（可写在 URL / Query / Body / 请求头 / 话术）：
      - `{{msg}}`：用户触发时的整条原始消息
      - `{{user_id}}`：发送者 QQ；`{{group_id}}`：群号（私聊为空）；`{{nickname}}`：发送者昵称
      - `{{res1}}` / `{{res2.字段}}`：各步返回；`{{res}}` 表示最近一步（兼容）
+     - **JSON 变换**（也可用 `json.stringify:` / `json.parse:`）：
+       - `{{stringify:res1.data}}`：`JSON.stringify`，适合把对象/数组直接嵌进 JSON Body（不要再外套引号）
+       - `{{parse:res1.payload}}`：只对 `res1.payload` 做 `JSON.parse`（明确 parse 目标）
+       - `{{parse:res1.payload|token}}`：先 parse `res1.payload`，再取其中的 `token`（`|` 前=parse 谁，`|` 后=再取啥）
      - 正则：`{{match}}` 整段匹配；`{{match1}}`… 第 n 个捕获组；`(?<city>…)` → `{{city}}`
 
 ## 📁 项目结构
@@ -37,7 +43,8 @@ napcat-plugin-yunfeng/
 │   ├── handlers/
 │   │   └── message-handler.ts # 消息处理器（命令解析、CD 冷却、消息工具）
 │   ├── services/
-│   │   └── api-service.ts    # WebUI API 路由（无认证模式）
+│   │   ├── api-service.ts       # WebUI API 路由与 Webhook
+│   │   └── notify-template.ts   # Webhook 话术 / 媒体标记渲染
 │   └── webui/                # React SPA 前端（独立构建）
 │       ├── index.html
 │       ├── package.json
@@ -233,14 +240,24 @@ graph TD
 
 ### Webhook 调用示例
 
+话术在 WebUI「Webhook 通知」页配置，例如：
+
+```text
+【{{res.aaa}}】
+{{res.bbb}}
+{{image:res.cover}}
+```
+
 ```bash
 curl -X POST "http://<NapCat主机>:<WebUI端口>/plugin/napcat-plugin-yunfeng/api/webhook/notify" \
   -H "Content-Type: application/json" \
   -H "X-Webhook-Secret: <配置页中的密钥>" \
-  -d "{\"title\":\"新消息\",\"content\":\"详情内容\",\"url\":\"https://example.com\"}"
+  -d "{\"aaa\":\"新消息\",\"bbb\":\"详情内容\",\"cover\":\"https://example.com/a.png\"}"
 ```
 
-不传群号。插件会推送到所有「已授权 + 开机 + 通知开启」的群；返回 `data.sent` / `data.failed`。
+不传群号。插件会推送到所有「已授权 + 开机 + 通知开启」的群；返回 `data.sent` / `data.failed` / `data.preview`。
+
+默认模板仍为 `【{{res.title}}】\\n{{res.content}}\\n{{res.url}}`，旧调用方可继续传 `title` / `content` / `url`。
 
 ### 前端调用方式
 

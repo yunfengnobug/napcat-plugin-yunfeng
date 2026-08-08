@@ -240,6 +240,13 @@ function sanitizeConfig(raw: unknown): PluginConfig {
         out.webhookSecret = generateWebhookSecret();
     }
 
+    // Webhook 通知话术模板（空则回退默认，兼容旧配置文件）
+    if (typeof raw.notifyTemplate === 'string' && raw.notifyTemplate.trim()) {
+        out.notifyTemplate = raw.notifyTemplate;
+    } else {
+        out.notifyTemplate = DEFAULT_CONFIG.notifyTemplate;
+    }
+
     // 全局功能默认开关
     if (isObject(raw.featureDefaults)) {
         if (typeof raw.featureDefaults.notify === 'boolean') {

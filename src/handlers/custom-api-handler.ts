@@ -123,6 +123,16 @@ function matchTrigger(text: string, rule: CustomApiRule): TriggerMatch {
     }
 }
 
+/** 模板变换：parse≈JSON.parse；stringify≈JSON.stringify */
+type TemplateTransform = 'none' | 'parse' | 'stringify';
+
+/**
+ * 占位符正则
+ * 支持 {{res1.a}} / {{stringify:res1.data}} / {{parse:res1.payload}} / {{parse:res1.payload|token}}
+ * parse 用 | 分隔：左侧是「对谁 parse」，右侧是「parse 后再取的字段」
+ */
+const PLACEHOLDER_RE = /\{\{\s*((?:json\.)?(?:parse|stringify):)?([\w.|]+)\s*\}\}/g;
+
 /** 按点路径取值 */
 function getByPath(root: unknown, path: string): unknown {
     if (!path) return root;
@@ -175,6 +185,29 @@ function valueToText(v: unknown): string {
     }
 }
 
+/**
+ * 解析占位符：前缀 + key + 可选 |afterPath
+ * 例：parse:res1.payload|token → 只对 res1.payload 做 JSON.parse，再取 .token
+ */
+function parsePlaceholderExpr(rawPrefix: string | undefined, expr: string): {
+    transform: TemplateTransform;
+    key: string;
+    /** parse 之后再取的路径（| 右侧），仅 parse 有效 */
+    afterParsePath: string;
+} {
+    const pipe = expr.indexOf('|');
+    const key = pipe >= 0 ? expr.slice(0, pipe) : expr;
+    const afterParsePath = pipe >= 0 ? expr.slice(pipe + 1).replace(/^\.+/, '') : '';
+    if (!rawPrefix) return { transform: 'none', key, afterParsePath: '' };
+    const p = rawPrefix.replace(/:$/, '').toLowerCase();
+    if (p === 'parse' || p === 'json.parse') return { transform: 'parse', key, afterParsePath };
+    if (p === 'stringify' || p === 'json.stringify') {
+        // stringify 忽略 | 右侧，避免歧义
+        return { transform: 'stringify', key, afterParsePath: '' };
+    }
+    return { transform: 'none', key, afterParsePath: '' };
+}
+
 /** 解析占位符对应的响应：res / res1 / res2… */
 function resolveResponseKey(
     key: string,
@@ -195,49 +228,104 @@ function resolveResponseKey(
 }
 
 /**
+ * 先按普通路径取值（不对中间节点自动 parse）
+ */
+function resolveBaseValue(
+    key: string,
+    vars: Record<string, string>,
+    responses: Record<string, StepResponse>,
+): { ok: boolean; value?: unknown } {
+    const resolved = resolveResponseKey(key, responses);
+    if (resolved) {
+        const { resp, path } = resolved;
+        if (!resp) return { ok: false };
+        if (key === 'body' || key === 'text') return { ok: true, value: resp.text };
+        if (key === 'json') return { ok: true, value: resp.json ?? resp.text };
+        if (!path) {
+            if (resp.json !== undefined && resp.json !== null) return { ok: true, value: resp.json };
+            return { ok: true, value: resp.text };
+        }
+        if (!hasPath(resp.json, path)) return { ok: false };
+        return { ok: true, value: getByPath(resp.json, path) };
+    }
+    if (Object.prototype.hasOwnProperty.call(vars, key)) {
+        return { ok: true, value: vars[key] ?? '' };
+    }
+    const last = responses.res;
+    if (last?.json != null && hasPath(last.json, key)) {
+        return { ok: true, value: getByPath(last.json, key) };
+    }
+    return { ok: false };
+}
+
+/**
+ * 对「明确指定的值」执行 JSON.parse，再可选取子路径
+ * | 左侧是 parse 目标，| 右侧是 parse 后再取的字段
+ */
+function applyJsonParse(
+    value: unknown,
+    afterParsePath: string,
+): { ok: boolean; value?: unknown } {
+    let cur: unknown = value;
+    if (typeof cur === 'string') {
+        try {
+            cur = JSON.parse(cur.trim());
+        } catch {
+            return { ok: false };
+        }
+    }
+    if (!afterParsePath) return { ok: true, value: cur };
+    if (!hasPath(cur, afterParsePath)) return { ok: false };
+    return { ok: true, value: getByPath(cur, afterParsePath) };
+}
+
+/** 解析占位符得到原始值（未做 stringify 文本化） */
+function resolvePlaceholderRaw(
+    key: string,
+    transform: TemplateTransform,
+    afterParsePath: string,
+    vars: Record<string, string>,
+    responses: Record<string, StepResponse>,
+): { ok: boolean; value?: unknown } {
+    const base = resolveBaseValue(key, vars, responses);
+    if (!base.ok) return { ok: false };
+    if (transform === 'parse') {
+        return applyJsonParse(base.value, afterParsePath);
+    }
+    return base;
+}
+
+/** 将原始值格式化为模板输出文本 */
+function formatPlaceholderValue(value: unknown, transform: TemplateTransform): string {
+    if (transform === 'stringify') {
+        try {
+            return JSON.stringify(value);
+        } catch {
+            return '';
+        }
+    }
+    return valueToText(value);
+}
+
+/**
  * 渲染模板占位符
- * 支持 msg/user_id/group_id/nickname/match… 与 res / res1.字段 / res2…
+ * parse:目标|字段 —— | 前是对谁 parse，| 后是 parse 后再取
  */
 function renderTemplate(
     template: string,
     vars: Record<string, string>,
     responses: Record<string, StepResponse>,
 ): string {
-    return template.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_all, key: string) => {
-        const resolved = resolveResponseKey(key, responses);
-        if (resolved) {
-            const { resp, path } = resolved;
-            if (!resp) return '';
-            if (key === 'body' || key === 'text') return resp.text;
-            if (key === 'json') {
-                try {
-                    return JSON.stringify(resp.json ?? resp.text);
-                } catch {
-                    return resp.text;
-                }
-            }
-            if (!path) {
-                return resp.json !== undefined && resp.json !== null
-                    ? valueToText(resp.json)
-                    : resp.text;
-            }
-            const fromRes = getByPath(resp.json, path);
-            return fromRes !== undefined ? valueToText(fromRes) : '';
-        }
-        if (Object.prototype.hasOwnProperty.call(vars, key)) return vars[key] ?? '';
-        // 兼容：裸字段从最后一步 JSON 取
-        const last = responses.res;
-        if (last?.json != null) {
-            const fromRoot = getByPath(last.json, key);
-            if (fromRoot !== undefined) return valueToText(fromRoot);
-        }
-        return '';
+    return template.replace(PLACEHOLDER_RE, (_all, rawPrefix: string | undefined, expr: string) => {
+        const { transform, key, afterParsePath } = parsePlaceholderExpr(rawPrefix, expr);
+        const resolved = resolvePlaceholderRaw(key, transform, afterParsePath, vars, responses);
+        if (!resolved.ok) return '';
+        return formatPlaceholderValue(resolved.value, transform);
     });
 }
 
 /**
  * 检查模板中引用的变量是否都存在
- * 消息类变量以 vars 为准；resN / resN.path 以 responses 为准
  */
 function findMissingPlaceholders(
     template: string,
@@ -245,32 +333,28 @@ function findMissingPlaceholders(
     responses: Record<string, StepResponse>,
 ): string[] {
     const missing: string[] = [];
-    const re = /\{\{\s*([\w.]+)\s*\}\}/g;
+    const re = new RegExp(PLACEHOLDER_RE.source, 'g');
     let m: RegExpExecArray | null;
     while ((m = re.exec(template || '')) !== null) {
-        const key = m[1];
+        const { transform, key, afterParsePath } = parsePlaceholderExpr(m[1], m[2]);
+        const display = transform === 'none'
+            ? key
+            : (afterParsePath ? `${transform}:${key}|${afterParsePath}` : `${transform}:${key}`);
         if (key === 'body' || key === 'text' || key === 'json') {
-            if (!responses.res) missing.push(key);
-            continue;
-        }
-        const resolved = resolveResponseKey(key, responses);
-        if (resolved) {
-            const { resp, path } = resolved;
-            if (!resp) {
-                missing.push(key);
-                continue;
-            }
-            if (path && !hasPath(resp.json, path)) {
-                missing.push(key);
+            if (!responses.res) missing.push(display);
+            else if (transform === 'parse') {
+                const base = resolveBaseValue(key, vars, responses);
+                if (!base.ok || !applyJsonParse(base.value, afterParsePath).ok) missing.push(display);
             }
             continue;
         }
-        if (!Object.prototype.hasOwnProperty.call(vars, key)) {
-            // 裸字段：仅当最后一步存在该路径时算有
-            const last = responses.res;
-            if (!last?.json || !hasPath(last.json, key)) {
-                missing.push(key);
-            }
+        const base = resolveBaseValue(key, vars, responses);
+        if (!base.ok) {
+            missing.push(display);
+            continue;
+        }
+        if (transform === 'parse' && !applyJsonParse(base.value, afterParsePath).ok) {
+            missing.push(display);
         }
     }
     return [...new Set(missing)];

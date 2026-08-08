@@ -93,10 +93,22 @@ export default function ConfigPage() {
                         value={config.webhookSecret || ''}
                         onChange={(v) => updateField('webhookSecret', v)}
                     />
+                    <TextAreaRow
+                        label="通知话术模板"
+                        desc="body（除 secret）绑定为 res。文本用 {{res.字段}}；图片/视频/文件用 {{image:res.cover}} / {{video:res.demo}} / {{file:res.path}}（值为空则跳过该段）"
+                        value={config.notifyTemplate || ''}
+                        onChange={(v) => updateField('notifyTemplate', v)}
+                        rows={6}
+                    />
                     <div className="rounded-lg bg-gray-50 dark:bg-white/[0.03] p-3 text-xs text-gray-500 font-mono whitespace-pre-wrap leading-relaxed">
 {`POST ${config.webhookPath || '/plugin/napcat-plugin-yunfeng/api/webhook/notify'}
 Header: X-Webhook-Secret: <密钥>
-Body: { "title": "标题", "content": "详情", "url": "链接" }`}
+Body: { "aaa": "标题", "bbb": "详情", "cover": "https://example.com/a.png" }
+
+模板示例：
+【{{res.aaa}}】
+{{res.bbb}}
+{{image:res.cover}}`}
                     </div>
                 </div>
             </div>
@@ -178,6 +190,32 @@ function InputRow({ label, desc, value, type = 'text', onChange }: {
                 onChange={(e) => setLocal(e.target.value)}
                 onBlur={handleBlur}
                 onKeyDown={(e) => e.key === 'Enter' && handleBlur()}
+            />
+        </div>
+    )
+}
+
+/** 多行文本配置（失焦保存） */
+function TextAreaRow({ label, desc, value, onChange, rows = 4 }: {
+    label: string; desc: string; value: string; onChange: (v: string) => void; rows?: number
+}) {
+    const [local, setLocal] = useState(value)
+    useEffect(() => { setLocal(value) }, [value])
+
+    const handleBlur = () => {
+        if (local !== value) onChange(local)
+    }
+
+    return (
+        <div>
+            <div className="text-sm font-medium text-gray-800 dark:text-gray-200 mb-1">{label}</div>
+            <div className="text-xs text-gray-400 mb-2">{desc}</div>
+            <textarea
+                className="input-field font-mono text-xs leading-relaxed min-h-[7rem]"
+                rows={rows}
+                value={local}
+                onChange={(e) => setLocal(e.target.value)}
+                onBlur={handleBlur}
             />
         </div>
     )
