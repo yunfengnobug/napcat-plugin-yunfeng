@@ -4,7 +4,7 @@
 - 更新版本至 {VERSION}
 
 ### 📦 安装说明
-1. 下载 `napcat-plugin-template.zip`
+1. 下载 `napcat-plugin-yunfeng.zip`
 2. 解压到 NapCat 的 `plugins` 目录
 3. 重启 NapCat
 
