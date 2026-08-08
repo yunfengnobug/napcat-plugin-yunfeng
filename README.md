@@ -375,7 +375,7 @@ git push origin v1.0.0
 也可在 GitHub Actions 页面手动触发，可选填版本号。
 
 **基础自定义：**
-- 修改 `release.yml` 中的 `PLUGIN_NAME` 为你的插件名称
+- Release 包名已为 `napcat-plugin-yunfeng`（与 `package.json` 的 `name` 一致）
 - 默认 Release Note 模板位于 `.github/prompt/default.md`
 
 #### 🤖 AI 生成 Release Note（可选）
