@@ -525,7 +525,7 @@ export default function CustomApiPage() {
                         <span className="text-xs leading-none group-open:rotate-180 transition-transform">▾</span>
                     </span>
                 </summary>
-                <div className="px-4 pb-3.5 pt-3 text-xs text-gray-600 dark:text-gray-300 leading-relaxed border-t border-primary/15 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                <div className="px-4 pb-3.5 pt-3 text-xs text-gray-600 dark:text-gray-300 leading-relaxed border-t border-primary/15 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
                     <VarGroup title="消息相关">
                         <VarItem name="{{msg}}" desc="触发时的整条原始消息" />
                         <VarItem name="{{user_id}}" desc="发送者 QQ 号" />
@@ -536,6 +536,11 @@ export default function CustomApiPage() {
                         <VarItem name="{{res1}}" desc="第 1 个接口的返回对象" />
                         <VarItem name="{{res2.字段}}" desc="第 2 个接口的字段" />
                         <VarItem name="{{res}}" desc="最近一步的返回（兼容）" />
+                    </VarGroup>
+                    <VarGroup title="JSON 变换">
+                        <VarItem name="{{stringify:res1.data}}" desc="JSON.stringify，对象可直接嵌进 Body" />
+                        <VarItem name="{{parse:res1.payload}}" desc="只对 payload 做 JSON.parse" />
+                        <VarItem name="{{parse:res1.payload|token}}" desc="| 前=parse 谁，| 后=再取字段" />
                     </VarGroup>
                     <VarGroup title="正则触发">
                         <VarItem name="{{match}}" desc="匹配到的整段文本" />

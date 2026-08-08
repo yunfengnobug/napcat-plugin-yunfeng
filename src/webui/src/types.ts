@@ -114,6 +114,8 @@ export interface PluginConfig {
     commandPrefix: string
     cooldownSeconds: number
     webhookSecret: string
+    /** Webhook 话术：{{res.字段}}；媒体 {{image:res.xxx}} / {{video:…}} / {{file:…}} */
+    notifyTemplate: string
     featureDefaults: {
         notify: boolean
         customApi: boolean

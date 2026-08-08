@@ -24,6 +24,7 @@ import type { OB11PostSendMsg } from 'napcat-types/napcat-onebot';
 import { pluginState, sanitizeCustomApiRule } from '../core/state';
 import { testCustomApiRule } from '../handlers/custom-api-handler';
 import type { CustomApiRule, FeatureFlags, GroupConfig, NotifyWebhookBody, PluginConfig } from '../types';
+import { extractNotifyRes, renderNotifyTemplate } from './notify-template';
 
 /** 格式化授权到期时间展示 */
 function formatExpireAt(ts: number): string {
@@ -346,7 +347,7 @@ export function registerApiRoutes(ctx: NapCatPluginContext): void {
      * 外部后台推送通知（不传群号，由插件决定目标群）
      * POST /plugin/napcat-plugin-yunfeng/api/webhook/notify
      * Header: X-Webhook-Secret: <密钥>
-     * Body: { title?, content?, url? }
+     * Body: 任意 JSON（除 secret）；字段绑定为模板 {{res.xxx}}，媒体用 {{image:res.cover}} 等
      *
      * 推送范围：已授权 + 开机 + 通知功能开启的群
      */
@@ -356,18 +357,27 @@ export function registerApiRoutes(ctx: NapCatPluginContext): void {
             const headers = (req as { headers?: Record<string, string | string[] | undefined> }).headers || {};
             const rawHeader = headers['x-webhook-secret'];
             const headerSecret = Array.isArray(rawHeader) ? rawHeader[0] : rawHeader;
-            const secret = (typeof headerSecret === 'string' ? headerSecret : '') || body.secret || '';
+            const secret = (typeof headerSecret === 'string' ? headerSecret : '')
+                || (typeof body.secret === 'string' ? body.secret : '')
+                || '';
 
             if (!pluginState.verifyWebhookSecret(secret)) {
                 return res.status(401).json({ code: -1, message: '密钥无效' });
             }
 
-            const title = typeof body.title === 'string' ? body.title.trim() : '';
-            const content = typeof body.content === 'string' ? body.content.trim() : '';
-            const url = typeof body.url === 'string' ? body.url.trim() : '';
+            const template = (pluginState.config.notifyTemplate || '').trim();
+            if (!template) {
+                return res.status(400).json({ code: -1, message: '未配置通知话术模板 notifyTemplate' });
+            }
 
-            if (!title && !content && !url) {
-                return res.status(400).json({ code: -1, message: 'title / content / url 至少填一项' });
+            // body 除 secret 外全部作为 res，供 {{res.xxx}} / {{image:res.xxx}} 使用
+            const notifyRes = extractNotifyRes(body as Record<string, unknown>);
+            const { segments, textPreview } = renderNotifyTemplate(template, notifyRes);
+            if (segments.length === 0) {
+                return res.status(400).json({
+                    code: -1,
+                    message: '模板渲染后无可发送内容（请检查 body 字段与 notifyTemplate）',
+                });
             }
 
             // 拉群列表，与本地配置交叉后选出可推送目标（插件决定，不吃调用方群号）
@@ -394,16 +404,15 @@ export function registerApiRoutes(ctx: NapCatPluginContext): void {
                 return res.status(200).json({
                     code: 0,
                     message: '无可推送的群（需已授权、开机且开启通知）',
-                    data: { sent: [], failed: [] },
+                    data: { sent: [], failed: [], preview: textPreview },
                 });
             }
 
-            // 简易文本模板（后续可按你的字段再改）
-            const lines: string[] = [];
-            if (title) lines.push(`【${title}】`);
-            if (content) lines.push(content);
-            if (url) lines.push(url);
-            const message = lines.join('\n');
+            // 仅文本时用字符串；含图片/视频/文件时用消息段数组
+            const first = segments[0];
+            const message = segments.length === 1 && first.type === 'text'
+                ? first.data.text
+                : segments;
 
             const sent: string[] = [];
             const failed: Array<{ group_id: string; error: string }> = [];
@@ -411,7 +420,7 @@ export function registerApiRoutes(ctx: NapCatPluginContext): void {
             for (const groupId of targets) {
                 try {
                     const params: OB11PostSendMsg = {
-                        message,
+                        message: message as OB11PostSendMsg['message'],
                         message_type: 'group',
                         group_id: groupId,
                     };
@@ -429,7 +438,7 @@ export function registerApiRoutes(ctx: NapCatPluginContext): void {
             res.json({
                 code: 0,
                 message: 'ok',
-                data: { sent, failed },
+                data: { sent, failed, preview: textPreview },
             });
         } catch (err) {
             ctx.logger.error('Webhook 通知处理失败:', err);
