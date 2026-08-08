@@ -13,6 +13,9 @@ dist/
 *.swp
 *.swo
 
+# 含个人 Git 身份信息，仅本机保留，勿进仓库
+.cursor/rules/git-identity.mdc
+
 # OS
 .DS_Store
 Thumbs.db
