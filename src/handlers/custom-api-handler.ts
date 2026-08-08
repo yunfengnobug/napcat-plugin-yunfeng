@@ -333,9 +333,9 @@ function findMissingPlaceholders(
     responses: Record<string, StepResponse>,
 ): string[] {
     const missing: string[] = [];
+    // 用 matchAll 遍历占位符，避免 RegExp.exec 被静态扫描误判为 child_process.exec
     const re = new RegExp(PLACEHOLDER_RE.source, 'g');
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(template || '')) !== null) {
+    for (const m of (template || '').matchAll(re)) {
         const { transform, key, afterParsePath } = parsePlaceholderExpr(m[1], m[2]);
         const display = transform === 'none'
             ? key

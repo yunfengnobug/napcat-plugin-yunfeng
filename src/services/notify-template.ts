@@ -88,9 +88,8 @@ export function renderNotifyTemplate(
     };
 
     let lastIndex = 0;
-    PLACEHOLDER_RE.lastIndex = 0;
-    let m: RegExpExecArray | null;
-    while ((m = PLACEHOLDER_RE.exec(src)) !== null) {
+    // 用 matchAll 遍历占位符，避免 RegExp.exec 被静态扫描误判为 child_process.exec
+    for (const m of src.matchAll(PLACEHOLDER_RE)) {
         textBuf += src.slice(lastIndex, m.index);
         lastIndex = m.index + m[0].length;
 
