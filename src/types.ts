@@ -40,7 +40,7 @@ export type CustomApiBodyType = 'none' | 'json' | 'form' | 'multipart' | 'raw';
 
 /**
  * 单条预期条件
- * - value 非空：字段值须等于期望值（可写 {{msg}} / {{id}} / {{res1.x}} 等，比较前渲染）
+ * - value 非空：字段值须等于期望值（可写 {{res1.x}} / {{res2.x}} / {{msg}} 等，比较前渲染）
  * - value 为空：仅要求该 key 存在即通过
  */
 export interface CustomApiExpectedCondition {
@@ -75,7 +75,7 @@ export interface CustomApiStep {
     timeoutMs: number;
     /**
      * 预期返回条件（最多 2 条）
-     * 例：res1.success=true；res1.token 留空=只要存在；value 可写 {{id}}
+     * 例：res1.success=true；res1.token 留空=只要存在；value 可写 {{res1.xxx}} / {{res2.xxx}}
      */
     expectedConditions: CustomApiExpectedCondition[];
     /** 多条预期条件之间的逻辑：且 / 或，默认 and */
