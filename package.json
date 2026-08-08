@@ -1,7 +1,7 @@
 {
   "name": "napcat-plugin-yunfeng",
   "plugin": "云枫",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "type": "module",
   "main": "index.mjs",
   "description": "云枫 — 群授权/开机门禁与 Webhook 通知等可扩展能力",

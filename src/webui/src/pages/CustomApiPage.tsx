@@ -13,6 +13,7 @@ import type {
     GroupInfo,
 } from '../types'
 import { IconTrash, IconX } from '../components/icons'
+import { randomId } from '../utils/id'
 
 /** 新建规则时的默认请求头 */
 const DEFAULT_HEADERS: Record<string, string> = {
@@ -24,7 +25,7 @@ const DEFAULT_STEP_TIMEOUT_MS = 8000
 /** 新建一步请求（返回为 resN） */
 function newStep(index: number): CustomApiStep {
     return {
-        id: crypto.randomUUID().replace(/-/g, '').slice(0, 12),
+        id: randomId(12),
         name: `接口 ${index + 1}`,
         method: 'GET',
         url: 'https://example.com/api',
@@ -42,7 +43,7 @@ function newStep(index: number): CustomApiStep {
 
 function newRule(): CustomApiRule {
     return {
-        id: crypto.randomUUID().replace(/-/g, '').slice(0, 16),
+        id: randomId(16),
         name: '新规则',
         enabled: true,
         triggerType: 'exact',
