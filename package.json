@@ -1,7 +1,7 @@
 {
   "name": "napcat-plugin-yunfeng",
   "plugin": "云枫",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "type": "module",
   "main": "index.mjs",
   "description": "自定义API，webhook消息的群推送等",
