@@ -1,6 +1,6 @@
 # 云枫（napcat-plugin-yunfeng）
 
-NapCat 插件：群授权 / 开机门禁为基础，Webhook 通知推群可跑通，后续功能按同一门禁扩展。
+NapCat 插件：自定义API，webhook消息的群推送等。
 
 ## 核心约定
 
@@ -96,7 +96,7 @@ pnpm install
 
 ### 2. 插件信息
 
-当前包名：`napcat-plugin-yunfeng`，显示名：云枫。
+当前包名：`napcat-plugin-yunfeng`，显示名：云枫，描述：自定义API，webhook消息的群推送等。
 
 ### 3. 开发你的功能
 

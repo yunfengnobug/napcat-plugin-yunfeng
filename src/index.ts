@@ -152,7 +152,7 @@ function registerWebUI(ctx: NapCatPluginContext): void {
         path: 'dashboard',
         title: '云枫',
         htmlFile: 'webui/index.html',
-        description: '群授权 / 开机 / Webhook 通知管理',
+        description: '自定义API，webhook消息的群推送等',
     });
 
     ctx.logger.debug('WebUI 路由注册完成');

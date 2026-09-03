@@ -4,7 +4,7 @@
   "version": "1.0.4",
   "type": "module",
   "main": "index.mjs",
-  "description": "云枫 — 群授权/开机门禁与 Webhook 通知等可扩展能力",
+  "description": "自定义API，webhook消息的群推送等",
   "author": "云枫",
   "license": "MIT",
   "keywords": [
