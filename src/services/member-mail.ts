@@ -13,6 +13,7 @@
  * 收件人固定是该成员的 QQ 邮箱（QQ号@qq.com）。没有可用 QQ 号就不发，也不编造地址。
  * 入群用入群模板，退群默认用退群模板。勾选「与入群邮件一致」时，退群改用解析后的入群模板，变量仍按退群事件替换。
  * 群里留空的项回退到全局；留空不会发空白邮件。
+ * 「发送测试邮件」只在全局邮件页：用已保存的全局入群主题和正文，变量按一份示例入群事件填写，收件人仍是这一次填写的地址。
  * 发信失败只记日志。
  */
 
@@ -192,19 +193,52 @@ export async function handleMemberMailNotice(ctx: NapCatPluginContext, rawEvent:
 }
 
 /**
+ * 「发送测试邮件」填进入群变量的示例
+ * 不查真实群和成员。子类型走管理员同意入群，这样 {{event_title}}、{{event_type}}、{{sub_type}}、{{event_detail}} 与真实入群信相同
+ */
+const TEST_JOIN_SAMPLE = {
+    noticeType: 'group_increase',
+    subType: 'approve',
+    groupName: '示例群',
+    groupId: '100000',
+    memberName: '示例成员',
+    memberId: '10001',
+} as const;
+
+/**
  * 发送测试邮件
+ * 主题和正文是已保存的全局入群文案（空则用内置默认），变量按示例入群事件替换
  * to 只用于这一次试发，不会被保存，也不会变成入群 / 退群的收件人
+ * 不读取某个群的入群覆盖；这个按钮只在全局邮件页
  */
 export async function sendTestMail(
     ctx: NapCatPluginContext,
     toRaw: string,
 ): Promise<{ ok: true; to: string } | { ok: false; message: string }> {
-    const configError = getMailConfigError(pluginState.config.mail);
+    const mail = pluginState.config.mail;
+    const configError = getMailConfigError(mail);
     if (configError) return { ok: false, message: `发信配置不完整：${configError}` };
 
     const mailbox = parseMailbox(toRaw);
     if (!mailbox) {
         return { ok: false, message: '请填写测试收件人邮箱。这只用于本次试发，入群和退群仍会发给成员自己的 QQ 邮箱（QQ号@qq.com）' };
+    }
+
+    // 与真实入群相同：全局入群模板，不带群覆盖；渲染、默认主题截断都走 buildMemberNoticeMail
+    const template = resolveMemberMailTemplate(mail, undefined, 'join');
+    const content = buildMemberNoticeMail({
+        noticeType: TEST_JOIN_SAMPLE.noticeType,
+        subType: TEST_JOIN_SAMPLE.subType,
+        groupName: TEST_JOIN_SAMPLE.groupName,
+        groupId: TEST_JOIN_SAMPLE.groupId,
+        memberName: TEST_JOIN_SAMPLE.memberName,
+        memberId: TEST_JOIN_SAMPLE.memberId,
+        timestamp: formatTimestamp(Date.now()),
+        subjectTemplate: template.subject,
+        bodyTemplate: template.body,
+    });
+    if (!content || !content.subject.trim() || !content.text.trim()) {
+        return { ok: false, message: '入群邮件文案为空，无法发送测试邮件' };
     }
 
     const now = Date.now();
@@ -213,20 +247,12 @@ export async function sendTestMail(
     }
     lastTestAt = now;
 
-    const text = [
-        '这是一封测试邮件，用来确认 SMTP 发信配置可用。',
-        '',
-        '入群和退群通知不会发给这个测试地址。',
-        '那些邮件会发给发生变动的成员本人，地址是该成员的 QQ 邮箱（QQ号@qq.com）。',
-        `时间：${formatTimestamp(Date.now())}`,
-    ].join('\n');
-
     try {
-        await deliver(pluginState.config.mail, mailbox.address, '【云枫】邮件发送测试', text);
-        ctx.logger.info(`测试邮件已发送 | to=${mailbox.address}`);
+        await deliver(mail, mailbox.address, content.subject, content.text);
+        ctx.logger.info(`测试邮件已按全局入群文案发送 | to=${mailbox.address}`);
         return { ok: true, to: mailbox.address };
     } catch (error) {
-        const message = safeError(error, pluginState.config.mail.password);
+        const message = safeError(error, mail.password);
         ctx.logger.error(`测试邮件发送失败 | to=${mailbox.address}:`, message);
         return { ok: false, message: `测试邮件发送失败：${message}` };
     }

@@ -416,6 +416,7 @@ export function registerApiRoutes(ctx: NapCatPluginContext): void {
 
     /**
      * 发送测试邮件
+     * 主题和正文取已保存的全局入群文案，变量按示例入群事件替换
      * Body: { to } 只用于这一次试发，不写入配置，也不是入群 / 退群的收件人
      */
     router.postNoAuth('/mail/test', async (req, res) => {
