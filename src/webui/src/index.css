@@ -550,3 +550,70 @@ select.input-field {
     background-repeat: no-repeat;
     background-position: right 8px center;
 }
+
+/* ========== 继承标记：要能直接看见，不能做成不起眼的灰字 ========== */
+.inherit-cue {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    padding: 3px 10px;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.45;
+    letter-spacing: 0.01em;
+}
+
+.inherit-banner {
+    display: block;
+    border-radius: 12px;
+    padding: 12px 14px;
+}
+
+.inherit-banner-title {
+    font-size: 15px;
+    font-weight: 700;
+    line-height: 1.4;
+}
+
+.inherit-banner-detail {
+    margin-top: 4px;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.55;
+}
+
+.inherit-cue-global {
+    color: #0c4a6e;
+    background: #e0f2fe;
+    border: 2px solid #0284c7;
+}
+
+.inherit-cue-follow {
+    color: #9d174d;
+    background: #fce7f3;
+    border: 2px solid #db2777;
+}
+
+.inherit-cue-choice {
+    color: #9a3412;
+    background: #ffedd5;
+    border: 2px solid #ea580c;
+}
+
+.dark .inherit-cue-global {
+    color: #e0f2fe;
+    background: rgba(2, 132, 199, 0.28);
+    border-color: #38bdf8;
+}
+
+.dark .inherit-cue-follow {
+    color: #fce7f3;
+    background: rgba(219, 39, 119, 0.28);
+    border-color: #f472b6;
+}
+
+.dark .inherit-cue-choice {
+    color: #ffedd5;
+    background: rgba(234, 88, 12, 0.24);
+    border-color: #fb923c;
+}

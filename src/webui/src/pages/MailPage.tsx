@@ -4,6 +4,7 @@ import { showToast } from '../hooks/useToast'
 import type { MailEncryption, MailSettings, PluginConfig } from '../types'
 import { IconMail } from '../components/icons'
 import MailVarsHint from '../components/MailVarsHint'
+import { InheritanceBanner } from '../components/InheritanceCue'
 
 /** 与 src/services/mail-template.ts 的默认文案保持一致。服务器没带回主题时用它补上 */
 const DEFAULT_MAIL_SUBJECT = '【{{event_title}}】{{group_name}}'
@@ -47,9 +48,11 @@ export type MailConfigSection = 'join' | 'leave'
  * 两个抽屉互相跳转时不卸载，已经填过、尚未失焦保存的内容还在这一份状态里
  * 入群 / 退群的收件人是成员自己的 QQ 邮箱，不在这里填写
  */
-export default function MailSettingsPanel({ section, onOpenSection }: {
+export default function MailSettingsPanel({ section, onOpenSection, reloadKey = 0 }: {
     section: MailConfigSection
     onOpenSection?: (section: MailConfigSection) => void
+    /** 全局开关保存后递增，让已经打开的抽屉重新读勾选结果 */
+    reloadKey?: number
 }) {
     const [mail, setMail] = useState<MailSettings | null>(null)
     const [passwordSet, setPasswordSet] = useState(false)
@@ -71,7 +74,7 @@ export default function MailSettingsPanel({ section, onOpenSection }: {
         }
     }, [])
 
-    useEffect(() => { fetchConfig() }, [fetchConfig])
+    useEffect(() => { fetchConfig() }, [fetchConfig, reloadKey])
 
     const saveMail = useCallback(async (next: MailSettings, options?: { clearPassword?: boolean }): Promise<boolean> => {
         // 主题或正文被清空时恢复初始文案，避免保存成空白邮件
@@ -315,8 +318,10 @@ export default function MailSettingsPanel({ section, onOpenSection }: {
             <div className="card p-5">
                 <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">退群邮件文案</h3>
                 <p className="text-xs text-gray-400 mb-4 leading-relaxed">
-                    默认单独设置，和入群文案互不影响。初始文字与入群相同，发出去仍会写成退群，因为变量按这次事件替换。
+                    打开「退群邮件」时，如果「入群邮件」也开着，并且这里的退群文字还是最初那套、也没有手动改过下面的勾选，会默认与入群邮件一致。
+                    已经单独改过退群文字，或手动取消过勾选的，保持原样，不会被盖掉。
                     勾选后，退群改用入群主题和正文，变量仍然按退群事件替换，例如 {'{{event_title}}'} 会是「退群通知」。
+                    不勾选则单独填写。初始文字与入群相同，发出去仍会写成退群。
                 </p>
                 <label className="flex items-start gap-2 cursor-pointer mb-4">
                     <input
@@ -333,9 +338,11 @@ export default function MailSettingsPanel({ section, onOpenSection }: {
                     </span>
                 </label>
                 {mail.leaveFollowJoin === true ? (
-                    <p className="text-xs text-gray-400 leading-relaxed">
-                        当前退群邮件使用入群主题和正文。没有单独指定的群会跟着这里；群里也可以再勾选或取消。群自己写过的入群文案，会用在那个群的退群邮件里。
-                    </p>
+                    <InheritanceBanner
+                        tone="follow"
+                        title="与入群邮件一致"
+                        detail="退群使用入群主题和正文。变量仍按退群事件替换，所以标题里的事件会写成退群，而不是入群。没有单独指定的群会跟着这里；群里写过的入群文案，会用在那个群的退群邮件里。"
+                    />
                 ) : (
                     <div className="space-y-5">
                         <InputRow

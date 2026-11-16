@@ -25,6 +25,7 @@ import { pluginState, sanitizeCustomApiRule } from '../core/state';
 import { testCustomApiRule } from '../handlers/custom-api-handler';
 import type { CustomApiRule, FeatureFlags, GroupConfig, NotifyWebhookBody, PluginConfig } from '../types';
 import { getMailConfigError, sendTestMail } from './member-mail';
+import { groupLeaveFollowShouldDefault } from './mail-template';
 import { extractNotifyRes, renderNotifyTemplate } from './notify-template';
 
 /**
@@ -93,6 +94,11 @@ function buildGroupView(
  * 应用单群配置补丁（开机、功能开关、授权天数、本群邮件文案）
  */
 function applyGroupPatch(groupId: string, body: Record<string, unknown>): GroupConfig {
+    const before = pluginState.getGroupConfig(groupId);
+    // 还没初始化时，页面上的开关只是全局预览，不算这个群自己已经打开过退群邮件
+    const leaveWasOn = before.settingsInitialized === true && before.features.mailLeave === true;
+    let requestedLeaveOn = false;
+
     // 开机走专用逻辑：首次开机时写入全局功能快照
     if (typeof body.poweredOn === 'boolean') {
         pluginState.setGroupPoweredOn(groupId, body.poweredOn);
@@ -104,7 +110,10 @@ function applyGroupPatch(groupId: string, body: Record<string, unknown>): GroupC
         if (typeof features.notify === 'boolean') patch.notify = features.notify;
         if (typeof features.customApi === 'boolean') patch.customApi = features.customApi;
         if (typeof features.mailJoin === 'boolean') patch.mailJoin = features.mailJoin;
-        if (typeof features.mailLeave === 'boolean') patch.mailLeave = features.mailLeave;
+        if (typeof features.mailLeave === 'boolean') {
+            patch.mailLeave = features.mailLeave;
+            if (features.mailLeave) requestedLeaveOn = true;
+        }
         if (Object.keys(patch).length > 0) {
             // 改功能前若尚未初始化，先标记为已初始化（以本次写入为准）
             const cur = pluginState.getGroupConfig(groupId);
@@ -119,7 +128,8 @@ function applyGroupPatch(groupId: string, body: Record<string, unknown>): GroupC
         }
     }
 
-    if (body.mailTemplate && typeof body.mailTemplate === 'object' && !Array.isArray(body.mailTemplate)) {
+    const hasExplicitTemplate = !!body.mailTemplate && typeof body.mailTemplate === 'object' && !Array.isArray(body.mailTemplate);
+    if (hasExplicitTemplate) {
         const template = body.mailTemplate as {
             subject?: unknown;
             body?: unknown;
@@ -143,6 +153,31 @@ function applyGroupPatch(groupId: string, body: Record<string, unknown>): GroupC
                 leaveFollowJoin,
             },
         });
+    }
+
+    // 刚打开退群邮件、且入群邮件也开着时，若还没单独写退群文案、也没明确选过不跟随，则默认与入群一致
+    // 同一请求里如果带了本群文案，以那份保存为准。旧的 leaveFollowJoin:false（含共用文案拆分）不会被改写
+    if (!hasExplicitTemplate) {
+        const after = pluginState.getGroupConfig(groupId);
+        const leaveNowOn = pluginState.getFeatureFlag(groupId, 'mailLeave') === true;
+        const firstPowerOn = body.poweredOn === true
+            && before.settingsInitialized !== true
+            && after.settingsInitialized === true;
+        if (leaveNowOn && !leaveWasOn && (requestedLeaveOn || firstPowerOn)) {
+            const stored = pluginState.config.groupConfigs[groupId]?.mailTemplate;
+            const joinOn = pluginState.getFeatureFlag(groupId, 'mailJoin') === true;
+            if (groupLeaveFollowShouldDefault(stored, joinOn, true)) {
+                pluginState.updateGroupConfig(groupId, {
+                    mailTemplate: {
+                        subject: stored?.subject || '',
+                        body: stored?.body || '',
+                        leaveSubject: stored?.leaveSubject || '',
+                        leaveBody: stored?.leaveBody || '',
+                        leaveFollowJoin: true,
+                    },
+                });
+            }
+        }
     }
 
     if (typeof body.addAuthDays === 'number') {

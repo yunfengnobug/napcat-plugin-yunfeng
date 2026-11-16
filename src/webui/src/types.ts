@@ -77,6 +77,11 @@ export interface MailSettings {
     leaveBody: string
     /** 勾选后，退群主题和正文沿用入群文案，变量仍按退群事件替换 */
     leaveFollowJoin: boolean
+    /**
+     * 服务端用来记住管理员是否已经手动改过上面的勾选
+     * 页面不单独展示，保存时原样带回，避免打开退群邮件开关时把手动选择盖掉
+     */
+    leaveFollowJoinChosen?: boolean
 }
 
 export type CustomApiTriggerType = 'exact' | 'fuzzy' | 'regex'
