@@ -4,7 +4,17 @@
  */
 
 import type { NapCatPluginContext, PluginConfigSchema } from 'napcat-types/napcat-onebot/network/plugin/types';
-import type { PluginConfig } from './types';
+import type { MailSettings, PluginConfig } from './types';
+
+/** 默认发信配置：留空即视为未配置，不会发信，也不包含任何账号口令 */
+export const DEFAULT_MAIL: MailSettings = {
+    host: '',
+    port: 465,
+    encryption: 'ssl',
+    username: '',
+    password: '',
+    from: '',
+};
 
 /** 默认配置 */
 export const DEFAULT_CONFIG: PluginConfig = {
@@ -22,7 +32,11 @@ export const DEFAULT_CONFIG: PluginConfig = {
     featureDefaults: {
         notify: true,
         customApi: false,
+        /** 新群默认不发入群 / 退群邮件，避免升级后突然给成员发信 */
+        mailJoin: false,
+        mailLeave: false,
     },
+    mail: { ...DEFAULT_MAIL },
     customApiRules: [],
     /** 一条消息命中多条关键词/规则时，默认只调用一次 */
     customApiOncePerMessage: true,
@@ -59,6 +73,8 @@ export function buildConfigSchema(ctx: NapCatPluginContext): PluginConfigSchema 
         // 冷却时间
         ctx.NapCatConfig.number('cooldownSeconds', '冷却时间（秒）', 60, '同一命令请求冷却时间，0 表示不限制'),
         // Webhook 密钥（详细配置建议在插件自带 WebUI 中管理）
-        ctx.NapCatConfig.text('webhookSecret', 'Webhook 密钥', '', '外部后台调用通知接口时需携带；建议在插件仪表盘配置页设置')
+        ctx.NapCatConfig.text('webhookSecret', 'Webhook 密钥', '', '外部后台调用通知接口时需携带；建议在插件仪表盘配置页设置'),
+        // 发信参数在插件页面里编辑；这里只提示收件人规则，避免把密码放进另一套表单
+        ctx.NapCatConfig.plainText('成员入群/退群邮件请到插件页面「邮件通知」填写 SMTP。收件人是变动成员自己的 QQ 邮箱（QQ号@qq.com），不是固定管理员邮箱。')
     );
 }

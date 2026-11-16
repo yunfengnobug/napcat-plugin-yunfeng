@@ -33,6 +33,7 @@ import { buildConfigSchema } from './config';
 import { pluginState } from './core/state';
 import { handleMessage } from './handlers/message-handler';
 import { registerApiRoutes } from './services/api-service';
+import { clearMemberMailDedupe, handleMemberMailNotice } from './services/member-mail';
 import type { PluginConfig } from './types';
 
 // ==================== 配置 UI Schema ====================
@@ -83,13 +84,15 @@ export const plugin_onmessage: PluginModule['plugin_onmessage'] = async (ctx, ev
 
 /**
  * 事件处理（可选）
- * 处理所有 OneBot 事件（通知、请求等）
+ * 群成员入群（notice.group_increase）或退群（notice.group_decrease）时，
+ * 按该群开关给成员自己的 QQ 邮箱发信。
  */
 export const plugin_onevent: PluginModule['plugin_onevent'] = async (ctx, event) => {
-    // TODO: 在这里处理通知、请求等非消息事件
-    // 示例：
-    // if (event.post_type === EventType.NOTICE) { ... }
-    // if (event.post_type === EventType.REQUEST) { ... }
+    try {
+        await handleMemberMailNotice(ctx, event);
+    } catch (error) {
+        ctx.logger.error('成员变动邮件处理失败:', error);
+    }
 };
 
 /**
@@ -99,6 +102,7 @@ export const plugin_onevent: PluginModule['plugin_onevent'] = async (ctx, event)
 export const plugin_cleanup: PluginModule['plugin_cleanup'] = async (ctx) => {
     try {
         // TODO: 在这里清理你的资源（定时器、WebSocket 连接等）
+        clearMemberMailDedupe();
         pluginState.cleanup();
         ctx.logger.info('插件已卸载');
     } catch (e) {

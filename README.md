@@ -30,6 +30,12 @@ NapCat 插件：自定义API，webhook消息的群推送等。
        - `{{parse:res1.payload}}`：只对 `res1.payload` 做 `JSON.parse`（明确 parse 目标）
        - `{{parse:res1.payload|token}}`：先 parse `res1.payload`，再取其中的 `token`（`|` 前=parse 谁，`|` 后=再取啥）
      - 正则：`{{match}}` 整段匹配；`{{match1}}`… 第 n 个捕获组；`(?<city>…)` → `{{city}}`
+8. **成员邮件**：群成员入群或退群时，给**该成员自己的 QQ 邮箱**发信，地址是 `QQ号@qq.com`
+   - 没有固定管理员收件人。成员 QQ 号不可用（须为 5–12 位、且不以 0 开头的数字）时跳过，并写日志，不会编造地址
+   - SMTP 在插件页面「邮件通知」里配置：主机、端口、加密（SSL / TLS、STARTTLS、不加密）、认证用户名、密码或授权码、发件人 From。密码只进插件配置文件，不要写进仓库
+   - 群管理里「入群邮件」「退群邮件」分开开关；全局设置只作为新群首次开机的初始值。多选群后可以批量开/关
+   - 仍要满足授权且开机。发信参数不完整，或对应开关关闭时，不发信。发送失败只记日志
+   - 「发送测试邮件」里填写的地址只用于这一次试发，不会变成入群 / 退群的收件人
 
 ## 📁 项目结构
 
@@ -45,7 +51,9 @@ napcat-plugin-yunfeng/
 │   │   └── message-handler.ts # 消息处理器（命令解析、CD 冷却、消息工具）
 │   ├── services/
 │   │   ├── api-service.ts       # WebUI API 路由与 Webhook
-│   │   └── notify-template.ts   # Webhook 话术 / 媒体标记渲染
+│   │   ├── notify-template.ts   # Webhook 话术 / 媒体标记渲染
+│   │   ├── member-mail.ts       # 入群 / 退群邮件（收件人是成员 QQ 邮箱）
+│   │   └── smtp-mail.ts         # SMTP 发信（SSL / STARTTLS / 明文）
 │   └── webui/                # React SPA 前端（独立构建）
 │       ├── index.html
 │       ├── package.json
@@ -72,7 +80,8 @@ napcat-plugin-yunfeng/
 │           └── pages/
 │               ├── StatusPage.tsx  # 仪表盘页面
 │               ├── ConfigPage.tsx  # 配置管理页面
-│               └── GroupsPage.tsx  # 群管理页面
+│               ├── GroupsPage.tsx  # 群管理页面
+│               └── MailPage.tsx    # 邮件通知（SMTP，收件人是成员 QQ 邮箱）
 ├── .github/
 │   ├── workflows/
 │   │   └── release.yml        # CI/CD 自动构建发布
@@ -103,6 +112,7 @@ pnpm install
 - **添加配置项**: 编辑 `src/types.ts` 和 `src/config.ts`
 - **消息处理**: 编辑 `src/handlers/message-handler.ts`（入口处已做授权/开机门禁）
 - **API / Webhook**: 编辑 `src/services/api-service.ts`
+- **成员邮件**: 编辑 `src/services/member-mail.ts`（收件人是成员 QQ 邮箱）和 `src/services/smtp-mail.ts`
 - **门禁与授权**: 编辑 `src/core/state.ts`（`canProcessGroup` / `isFeatureEnabled`）
 - **WebUI 页面**: 编辑 `src/webui/src/pages/` 下的页面组件
 - **WebUI 类型**: 同步更新 `src/webui/src/types.ts` 中的前端类型
@@ -223,7 +233,7 @@ graph TD
 
 ### 内置 API 接口
 
-路径前缀：`/plugin/napcat-plugin-yunfeng/api`
+路径前缀：`/plugin/<插件 id>/api`（本仓库包名是 `napcat-plugin-yunfeng`；若 NapCat 以白名单 id 加载，则前缀跟着那个 id 走）
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
@@ -238,6 +248,7 @@ graph TD
 | GET | `/custom-api/rules` | 获取自定义 API 规则 |
 | POST | `/custom-api/rules` | 全量保存自定义 API 规则 |
 | POST | `/custom-api/test` | 试跑规则（串行请求，返回各步结果与话术预览，不发送） |
+| POST | `/mail/test` | 按当前 SMTP 发送测试邮件。`to` 只用于这一次，不是入群 / 退群收件人 |
 
 ### Webhook 调用示例
 
@@ -259,6 +270,14 @@ curl -X POST "http://<NapCat主机>:<WebUI端口>/plugin/napcat-plugin-yunfeng/a
 不传群号。插件会推送到所有「已授权 + 开机 + 通知开启」的群；返回 `data.sent` / `data.failed` / `data.preview`。
 
 默认模板仍为 `【{{res.title}}】\\n{{res.content}}\\n{{res.url}}`，旧调用方可继续传 `title` / `content` / `url`。
+
+### 成员入群 / 退群邮件
+
+在插件页面「邮件通知」填写 SMTP。QQ 邮箱发信时，主机一般是 `smtp.qq.com`，加密用 SSL / TLS（端口 465）或 STARTTLS（端口 587），密码填邮箱授权码，发件人填这只邮箱。
+
+收件人不用填。有人入群或退群，并且该群打开了对应开关（同时已授权、已开机）时，插件把信发给这个人的 `QQ号@qq.com`。邮件正文包含事件类型（入群或退群）、群名称、群号、成员名称、成员 QQ 和时间。
+
+群管理可以单独开关「入群邮件」和「退群邮件」，也可以勾选多个群后批量开关。全局设置里的同名开关只影响之后首次开机的群。
 
 ### 前端调用方式
 

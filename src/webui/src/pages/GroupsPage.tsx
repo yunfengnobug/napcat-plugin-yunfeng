@@ -152,6 +152,18 @@ export default function GroupsPage() {
                         >
                             延长
                         </button>
+                        <button className="btn btn-ghost text-[11px] !px-2 !py-1" onClick={() => bulkPatch({ features: { mailJoin: true } }, `已为 ${checked.size} 个群开启入群邮件`)}>
+                            入群邮件开
+                        </button>
+                        <button className="btn btn-ghost text-[11px] !px-2 !py-1" onClick={() => bulkPatch({ features: { mailJoin: false } }, `已为 ${checked.size} 个群关闭入群邮件`)}>
+                            入群邮件关
+                        </button>
+                        <button className="btn btn-ghost text-[11px] !px-2 !py-1" onClick={() => bulkPatch({ features: { mailLeave: true } }, `已为 ${checked.size} 个群开启退群邮件`)}>
+                            退群邮件开
+                        </button>
+                        <button className="btn btn-ghost text-[11px] !px-2 !py-1" onClick={() => bulkPatch({ features: { mailLeave: false } }, `已为 ${checked.size} 个群关闭退群邮件`)}>
+                            退群邮件关
+                        </button>
                     </div>
                 )}
 
@@ -318,6 +330,26 @@ export default function GroupsPage() {
                                     selected.group_id,
                                     { features: { customApi: v } },
                                     `自定义 API 已${v ? '开启' : '关闭'}`
+                                )}
+                            />
+                            <ToggleRow
+                                label="入群邮件"
+                                desc="有人入群时，给该成员自己的 QQ 邮箱（QQ号@qq.com）发信。不会发给固定管理员。仍需本群已授权且开机，并在「邮件通知」里配好 SMTP"
+                                checked={selected.features.mailJoin === true}
+                                onChange={(v) => patchGroup(
+                                    selected.group_id,
+                                    { features: { mailJoin: v } },
+                                    `入群邮件已${v ? '开启' : '关闭'}`
+                                )}
+                            />
+                            <ToggleRow
+                                label="退群邮件"
+                                desc="有人退群时，给该成员自己的 QQ 邮箱（QQ号@qq.com）发信。不会发给固定管理员。仍需本群已授权且开机，并在「邮件通知」里配好 SMTP"
+                                checked={selected.features.mailLeave === true}
+                                onChange={(v) => patchGroup(
+                                    selected.group_id,
+                                    { features: { mailLeave: v } },
+                                    `退群邮件已${v ? '开启' : '关闭'}`
                                 )}
                             />
                         </div>

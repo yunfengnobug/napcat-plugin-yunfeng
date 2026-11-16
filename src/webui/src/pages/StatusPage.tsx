@@ -124,6 +124,10 @@ export default function StatusPage({ status, onRefresh }: StatusPageProps) {
                         label="通知初始(全局)"
                         value={config.featureDefaults?.notify !== false ? '开启' : '关闭'}
                     />
+                    <InfoRow
+                        label="成员邮件"
+                        value={status.mailReady ? `已就绪 · 已发送 ${stats.mailSent ?? 0}` : '发信参数未完成'}
+                    />
                 </div>
             </div>
         </div>

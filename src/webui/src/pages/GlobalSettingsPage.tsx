@@ -32,6 +32,8 @@ export default function GlobalSettingsPage() {
                 ...config.featureDefaults,
                 notify: config.featureDefaults?.notify !== false,
                 customApi: config.featureDefaults?.customApi === true,
+                mailJoin: config.featureDefaults?.mailJoin === true,
+                mailLeave: config.featureDefaults?.mailLeave === true,
                 ...patch,
             }
             const { webhookPath: _wp, ...payload } = { ...config, featureDefaults }
@@ -83,6 +85,18 @@ export default function GlobalSettingsPage() {
                         desc="新群首次开机时，自定义 API 默认按此开关写入该群"
                         checked={config.featureDefaults?.customApi === true}
                         onChange={(v) => saveFeatureDefaults({ customApi: v })}
+                    />
+                    <ToggleRow
+                        label="入群邮件"
+                        desc="新群首次开机时写入。开启后，入群邮件发给该成员自己的 QQ 邮箱（QQ号@qq.com），不是固定管理员"
+                        checked={config.featureDefaults?.mailJoin === true}
+                        onChange={(v) => saveFeatureDefaults({ mailJoin: v })}
+                    />
+                    <ToggleRow
+                        label="退群邮件"
+                        desc="新群首次开机时写入。开启后，退群邮件发给该成员自己的 QQ 邮箱（QQ号@qq.com），不是固定管理员"
+                        checked={config.featureDefaults?.mailLeave === true}
+                        onChange={(v) => saveFeatureDefaults({ mailLeave: v })}
                     />
                 </div>
             </div>
