@@ -11,6 +11,7 @@
  * - get_stranger_info：成员资料查不到时再取昵称（user_id）
  *
  * 收件人固定是该成员的 QQ 邮箱（QQ号@qq.com）。没有可用 QQ 号就不发，也不编造地址。
+ * 主题和正文用全局模板，群里填写了的项覆盖全局；留空不会发空白邮件。
  * 发信失败只记日志。
  */
 
@@ -18,6 +19,8 @@ import type { NapCatPluginContext } from 'napcat-types/napcat-onebot/network/plu
 import { EventType } from 'napcat-types/napcat-onebot/event/index';
 import { pluginState } from '../core/state';
 import type { MailSettings } from '../types';
+import { formatFromHeader, parseMailbox, resolveSender } from './mail-address';
+import { renderMemberMailContent, resolveMemberMailTemplate } from './mail-template';
 import { sendSmtpMail } from './smtp-mail';
 
 /** 同一事件短时间重复上报时不连发两封 */
@@ -33,11 +36,6 @@ interface MemberNotice {
     group_id?: string | number;
     user_id?: string | number;
     time?: number;
-}
-
-interface Mailbox {
-    name: string;
-    address: string;
 }
 
 /** 热重载 / 卸载时清掉去重记录 */
@@ -60,17 +58,8 @@ export function qqNumberToMailbox(userId: unknown): string | null {
     return `${raw}@qq.com`;
 }
 
-/** 解析发件人。支持 `name@example.com` 和 `名称 <name@example.com>` */
-export function parseMailbox(input: string): Mailbox | null {
-    const raw = input.trim();
-    if (!raw || /[\r\n]/.test(raw)) return null;
-    const angled = raw.match(/^(.*)<([^<>]+)>$/);
-    const address = (angled ? angled[2] : raw).trim();
-    const name = angled ? angled[1].trim().replace(/^"|"$/g, '') : '';
-    if (!/^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(address)) return null;
-    if (/[\r\n]/.test(name)) return null;
-    return { name, address };
-}
+/** 仍导出，测试收件人和旧调用按邮箱原文解析 */
+export { parseMailbox };
 
 /**
  * 发信配置是否完整
@@ -85,7 +74,7 @@ export function getMailConfigError(mail: MailSettings | undefined): string | nul
     if (mail.encryption !== 'ssl' && mail.encryption !== 'starttls' && mail.encryption !== 'none') {
         return '加密方式无效';
     }
-    if (!parseMailbox(mail.from)) return '发件人地址无效';
+    if (!resolveSender(mail)) return '发件人地址无效';
     const username = mail.username.trim();
     const password = mail.password;
     if (/[\r\n]/.test(username)) return '认证用户名无效';
@@ -95,7 +84,10 @@ export function getMailConfigError(mail: MailSettings | undefined): string | nul
     return null;
 }
 
-/** 入群 / 退群邮件正文。收件人是成员本人，正文只写变动事实 */
+/**
+ * 入群 / 退群邮件正文。收件人是成员本人
+ * 不传模板时用内置默认文案，和以前写死的主题、正文相同
+ */
 export function buildMemberNoticeMail(input: {
     noticeType: string;
     subType: string;
@@ -104,23 +96,32 @@ export function buildMemberNoticeMail(input: {
     memberName: string;
     memberId: string;
     timestamp: string;
+    /** 已经按「群覆盖 → 全局」选好的主题。空则用内置默认 */
+    subjectTemplate?: string;
+    /** 已经按「群覆盖 → 全局」选好的正文。空则用内置默认 */
+    bodyTemplate?: string;
 }): { subject: string; text: string } | null {
     const labels = describeNotice(input.noticeType, input.subType);
     if (!labels) return null;
     const groupName = oneLine(input.groupName, '未知群');
     const memberName = oneLine(input.memberName, '未知');
-    const subjectName = Array.from(groupName).slice(0, 40).join('');
-    return {
-        subject: `【${labels.title}】${subjectName}`,
-        text: [
-            `事件类型：${labels.typeLine}`,
-            `群名称：${groupName}`,
-            `群号：${input.groupId}`,
-            `成员名称：${memberName}`,
-            `成员QQ：${input.memberId}`,
-            `时间：${input.timestamp}`,
-        ].join('\n'),
-    };
+    return renderMemberMailContent(
+        {
+            subject: input.subjectTemplate || '',
+            body: input.bodyTemplate || '',
+        },
+        {
+            group_name: groupName,
+            group_id: oneLine(input.groupId, ''),
+            member_name: memberName,
+            member_id: oneLine(input.memberId, ''),
+            event_type: labels.eventType,
+            event_title: labels.title,
+            sub_type: oneLine(labels.subTypeName, ''),
+            event_detail: labels.typeLine,
+            time: oneLine(input.timestamp, ''),
+        },
+    );
 }
 
 /**
@@ -161,6 +162,11 @@ export async function handleMemberMailNotice(ctx: NapCatPluginContext, rawEvent:
         if (isDuplicate(dedupeKey)) return;
 
         const names = await lookupNames(ctx, groupId, userId);
+        const template = resolveMemberMailTemplate(
+            mail.subject,
+            mail.body,
+            pluginState.config.groupConfigs[groupId]?.mailTemplate,
+        );
         const content = buildMemberNoticeMail({
             noticeType,
             subType,
@@ -169,6 +175,8 @@ export async function handleMemberMailNotice(ctx: NapCatPluginContext, rawEvent:
             memberName: names.memberName,
             memberId: to.slice(0, to.indexOf('@')),
             timestamp: formatTimestamp(event.time),
+            subjectTemplate: template.subject,
+            bodyTemplate: template.body,
         });
         if (!content) return;
 
@@ -223,7 +231,7 @@ export async function sendTestMail(
 }
 
 async function deliver(mail: MailSettings, to: string, subject: string, text: string): Promise<void> {
-    const from = parseMailbox(mail.from);
+    const from = resolveSender(mail);
     if (!from) throw new Error('发件人地址无效');
     await sendSmtpMail({
         host: mail.host.trim(),
@@ -299,10 +307,21 @@ function memberDisplayName(member: { card?: string; nickname?: string } | null):
     return '';
 }
 
-function describeNotice(noticeType: string, subType: string): { title: string; typeLine: string } | null {
+function describeNotice(noticeType: string, subType: string): {
+    title: string;
+    typeLine: string;
+    eventType: string;
+    subTypeName: string;
+} | null {
     if (noticeType === 'group_increase') {
-        const sub = subType === 'invite' ? '邀请入群' : subType === 'approve' ? '管理员同意入群' : '';
-        return { title: '入群通知', typeLine: sub ? `入群（${sub}）` : '入群' };
+        const known = subType === 'invite' ? '邀请入群' : subType === 'approve' ? '管理员同意入群' : '';
+        return {
+            title: '入群通知',
+            eventType: '入群',
+            // 默认文案仍只用认识的子类型；{{sub_type}} 在不认识时保留原始值
+            subTypeName: known || safeSubType(subType),
+            typeLine: known ? `入群（${known}）` : '入群',
+        };
     }
     if (noticeType === 'group_decrease') {
         const subMap: Record<string, string> = {
@@ -310,19 +329,19 @@ function describeNotice(noticeType: string, subType: string): { title: string; t
             kick: '被移出群',
             kick_me: '机器人被移出群',
         };
-        const sub = subMap[subType] || '';
-        return { title: '退群通知', typeLine: sub ? `退群（${sub}）` : '退群' };
+        const known = subMap[subType] || '';
+        return {
+            title: '退群通知',
+            eventType: '退群',
+            subTypeName: known || safeSubType(subType),
+            typeLine: known ? `退群（${known}）` : '退群',
+        };
     }
     return null;
 }
 
-function formatFromHeader(mailbox: Mailbox): string {
-    if (!mailbox.name) return mailbox.address;
-    if (/^[\t\x20-\x7E]*$/.test(mailbox.name)) {
-        return `"${mailbox.name.replace(/["\\]/g, '')}" <${mailbox.address}>`;
-    }
-    const encoded = `=?UTF-8?B?${Buffer.from(mailbox.name, 'utf8').toString('base64')}?=`;
-    return `${encoded} <${mailbox.address}>`;
+function safeSubType(subType: string): string {
+    return subType.replace(/[\r\n]/g, '').trim().slice(0, 40);
 }
 
 function formatTimestamp(time: unknown): string {

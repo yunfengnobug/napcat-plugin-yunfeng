@@ -3,6 +3,18 @@ import { noAuthFetch } from '../utils/api'
 import { showToast } from '../hooks/useToast'
 import type { MailEncryption, MailSettings, PluginConfig } from '../types'
 import { IconMail } from '../components/icons'
+import MailVarsHint from '../components/MailVarsHint'
+
+/** 与 src/services/mail-template.ts 的默认文案保持一致。服务器没带回主题时用它补上 */
+const DEFAULT_MAIL_SUBJECT = '【{{event_title}}】{{group_name}}'
+const DEFAULT_MAIL_BODY = [
+    '事件类型：{{event_detail}}',
+    '群名称：{{group_name}}',
+    '群号：{{group_id}}',
+    '成员名称：{{member_name}}',
+    '成员QQ：{{member_id}}',
+    '时间：{{time}}',
+].join('\n')
 
 /** 三种加密方式对应的常用端口。只有端口还停在上一种默认值时才跟着改 */
 const DEFAULT_PORT: Record<MailEncryption, number> = {
@@ -18,6 +30,9 @@ const EMPTY_MAIL: MailSettings = {
     username: '',
     password: '',
     from: '',
+    fromName: '',
+    subject: DEFAULT_MAIL_SUBJECT,
+    body: DEFAULT_MAIL_BODY,
 }
 
 /**
@@ -46,12 +61,20 @@ export default function MailPage() {
     useEffect(() => { fetchConfig() }, [fetchConfig])
 
     const saveMail = useCallback(async (next: MailSettings, options?: { clearPassword?: boolean }) => {
+        // 主题或正文被清空时恢复初始文案，避免保存成空白邮件
+        const payload: MailSettings = {
+            ...next,
+            from: next.from.trim(),
+            fromName: next.fromName.trim(),
+            subject: next.subject.trim() || DEFAULT_MAIL_SUBJECT,
+            body: next.body.trim() || DEFAULT_MAIL_BODY,
+        }
         setSaving(true)
         try {
             const res = await noAuthFetch('/config', {
                 method: 'POST',
                 body: JSON.stringify({
-                    mail: next,
+                    mail: payload,
                     clearMailPassword: options?.clearPassword === true,
                 }),
             })
@@ -61,12 +84,12 @@ export default function MailPage() {
             }
             if (options?.clearPassword) {
                 setPasswordSet(false)
-                setMail({ ...next, password: '' })
-            } else if (next.password) {
+                setMail({ ...payload, password: '' })
+            } else if (payload.password) {
                 setPasswordSet(true)
-                setMail({ ...next, password: '' })
+                setMail({ ...payload, password: '' })
             } else {
-                setMail({ ...next, password: '' })
+                setMail({ ...payload, password: '' })
             }
             showToast(options?.clearPassword ? '密码已清除' : '发信配置已保存', 'success')
         } catch {
@@ -130,6 +153,7 @@ export default function MailPage() {
                 入群和退群邮件<strong>发给发生变动的成员本人</strong>，地址是该成员的 QQ 邮箱（QQ号@qq.com）。
                 这里没有固定收件人。成员没有可用 QQ 号时会跳过并写入日志。
                 群里还要分别打开「入群邮件」「退群邮件」，并且该群已授权、已开机。发信失败只记日志，不会让插件停掉。
+                发件人名称是对方看到的名字，发件人地址才是这只邮箱；两者都不是入群或退群的收件人。
             </div>
 
             <div className="card p-5 hover-lift">
@@ -193,11 +217,43 @@ export default function MailPage() {
                         </div>
                     )}
                     <InputRow
-                        label="发件人 From"
-                        desc="发信时显示的发件地址，例如 notice@example.com。这不是入群或退群的收件人"
+                        label="发件人名称"
+                        desc="收件人在邮箱里看到的名字，例如「云枫」。留空则只发送下面的邮箱地址，有些邮箱会改成显示 @ 前面的一段。这不是入群或退群邮件的收件人"
+                        value={mail.fromName}
+                        placeholder="例如 云枫"
+                        onChange={(v) => updateMail({ fromName: v })}
+                    />
+                    <InputRow
+                        label="发件人地址"
+                        desc="实际发信的邮箱，例如 1245654743@qq.com。只填地址，不要写成「名称 <邮箱>」。这不是入群或退群邮件的收件人，那些信仍然发给成员自己的 QQ 邮箱（QQ号@qq.com）"
                         value={mail.from}
+                        placeholder="1245654743@qq.com"
                         onChange={(v) => updateMail({ from: v })}
                     />
+                </div>
+            </div>
+
+            <div className="card p-5 hover-lift">
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">邮件文案</h3>
+                <p className="text-xs text-gray-400 mb-4 leading-relaxed">
+                    这是所有群的默认主题和正文。某个群在「群管理」里另写了主题或正文时，用该群的；留空的那一项仍用这里的全局文案。
+                    把主题或正文清空后再保存，会恢复成最初那套文案，不会发出空白邮件。
+                    未改过的默认主题里，群名最多显示 40 个字；主题一旦改成自己的文字，{'{{group_name}}'} 就是完整群名。
+                </p>
+                <div className="space-y-5">
+                    <InputRow
+                        label="主题"
+                        desc="入群和退群共用这一条。入群、退群的差别用变量区分"
+                        value={mail.subject}
+                        onChange={(v) => updateMail({ subject: v })}
+                    />
+                    <TextAreaRow
+                        label="正文"
+                        desc="纯文本。换行会保留"
+                        value={mail.body}
+                        onChange={(v) => updateMail({ body: v })}
+                    />
+                    <MailVarsHint />
                 </div>
             </div>
 
@@ -236,6 +292,33 @@ function normalizePort(value: string, current: number): number {
     const rounded = Math.floor(port)
     if (rounded < 1 || rounded > 65535) return current
     return rounded
+}
+
+function TextAreaRow({ label, desc, value, onChange }: {
+    label: string
+    desc: string
+    value: string
+    onChange: (v: string) => void
+}) {
+    const [local, setLocal] = useState(value)
+    useEffect(() => { setLocal(value) }, [value])
+
+    const handleBlur = () => {
+        if (local !== value) onChange(local)
+    }
+
+    return (
+        <div>
+            <div className="text-sm font-medium text-gray-800 dark:text-gray-200 mb-1">{label}</div>
+            <div className="text-xs text-gray-400 mb-2">{desc}</div>
+            <textarea
+                className="input-field min-h-[160px] resize-y"
+                value={local}
+                onChange={(e) => setLocal(e.target.value)}
+                onBlur={handleBlur}
+            />
+        </div>
+    )
 }
 
 function InputRow({ label, desc, value, type = 'text', placeholder, onChange }: {
