@@ -28,14 +28,33 @@ export interface FeatureFlags {
 export type MailEncryption = 'ssl' | 'starttls' | 'none';
 
 /**
- * 入群 / 退群邮件文案
- * 群配置里某一项留空，表示这一项沿用全局模板
+ * 某个群的入群 / 退群邮件文案
+ * 文本留空表示这一项沿用全局；不会因此发空白邮件
+ * leaveFollowJoin 不写表示跟随全局勾选
  */
 export interface MailTemplate {
-    /** 邮件主题 */
+    /** 入群主题。留空表示沿用全局入群主题 */
     subject: string;
-    /** 邮件正文 */
+    /** 入群正文。留空表示沿用全局入群正文 */
     body: string;
+    /**
+     * 退群主题。留空表示沿用全局退群主题
+     * 勾选「与入群邮件一致」时发信不使用这项
+     */
+    leaveSubject: string;
+    /**
+     * 退群正文。留空表示沿用全局退群正文
+     * 勾选「与入群邮件一致」时发信不使用这项
+     */
+    leaveBody: string;
+    /**
+     * 本群退群文案是否与入群一致
+     * 不写：跟随全局 leaveFollowJoin
+     * true：用解析后的入群主题和正文，变量仍按退群事件替换
+     * false：单独使用上面的退群主题和正文
+     * null 只出现在保存请求里，读入后会当成「不写」
+     */
+    leaveFollowJoin?: boolean | null;
 }
 
 /**
@@ -61,10 +80,23 @@ export interface MailSettings {
      * 留空则 From 头只写地址
      */
     fromName: string;
-    /** 全局默认主题。支持 {{group_name}} 等变量 */
+    /** 全局入群主题。支持 {{group_name}} 等变量。空则用内置默认，不会发空白邮件 */
     subject: string;
-    /** 全局默认正文。支持与主题相同的变量 */
+    /** 全局入群正文。支持与主题相同的变量。空则用内置默认 */
     body: string;
+    /**
+     * 全局退群主题。不勾选「与入群邮件一致」时使用
+     * 空则用内置默认，不会发空白邮件
+     */
+    leaveSubject: string;
+    /** 全局退群正文。不勾选「与入群邮件一致」时使用。空则用内置默认 */
+    leaveBody: string;
+    /**
+     * 退群主题和正文是否沿用入群文案
+     * 勾选后发信仍按退群事件替换 {{event_title}} 等变量
+     * 默认关闭：已有的退群文案保持单独一份，不会被改成入群文案
+     */
+    leaveFollowJoin: boolean;
 }
 
 // ==================== 自定义 API 规则 ====================
@@ -216,7 +248,7 @@ export interface PluginConfig {
  * - authExpireAt：授权到期时间戳（毫秒）
  * - settingsInitialized：是否已应用过全局初始设置（首次开机时置 true）
  * - features：本群功能开关（开启后独立于全局）
- * - mailTemplate：本群邮件文案，留空的项沿用全局
+ * - mailTemplate：本群邮件文案。入群、退群分开；留空的项沿用全局
  */
 export interface GroupConfig {
     /** 是否开机；关机时不处理该群任何后续功能 */
@@ -229,7 +261,8 @@ export interface GroupConfig {
     features?: FeatureFlags;
     /**
      * 本群入群 / 退群邮件文案
-     * subject 或 body 留空表示该项用全局模板，不会发空白邮件
+     * 某一项留空表示该项用全局模板，不会发空白邮件
+     * 退群可以勾选与入群一致，也可以不写这个勾选以跟随全局
      */
     mailTemplate?: MailTemplate;
 }

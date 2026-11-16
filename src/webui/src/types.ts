@@ -29,10 +29,27 @@ export interface FeatureFlags {
 /** SMTP 加密方式 */
 export type MailEncryption = 'ssl' | 'starttls' | 'none'
 
-/** 入群 / 退群邮件文案。群配置里留空的项表示沿用全局 */
+/**
+ * 某个群的入群 / 退群邮件文案
+ * 文本留空表示沿用全局对应项
+ * leaveFollowJoin 为 null 表示这个勾选跟随全局
+ */
 export interface MailTemplate {
+    /** 入群主题 */
     subject: string
+    /** 入群正文 */
     body: string
+    /** 退群主题。勾选与入群一致时发信不使用 */
+    leaveSubject: string
+    /** 退群正文。勾选与入群一致时发信不使用 */
+    leaveBody: string
+    /**
+     * 本群退群是否与入群文案一致
+     * null：跟随全局
+     * true：用本群解析后的入群文案，变量仍按退群事件替换
+     * false：单独使用退群主题和正文
+     */
+    leaveFollowJoin: boolean | null
 }
 
 /**
@@ -50,10 +67,16 @@ export interface MailSettings {
     from: string
     /** 收件人看到的发件人名称。空则只发地址 */
     fromName: string
-    /** 全局默认主题 */
+    /** 全局入群主题 */
     subject: string
-    /** 全局默认正文 */
+    /** 全局入群正文 */
     body: string
+    /** 全局退群主题。未勾选「与入群邮件一致」时使用 */
+    leaveSubject: string
+    /** 全局退群正文。未勾选「与入群邮件一致」时使用 */
+    leaveBody: string
+    /** 勾选后，退群主题和正文沿用入群文案，变量仍按退群事件替换 */
+    leaveFollowJoin: boolean
 }
 
 export type CustomApiTriggerType = 'exact' | 'fuzzy' | 'regex'
@@ -174,7 +197,7 @@ export interface GroupConfig {
     authExpireAt?: number
     settingsInitialized?: boolean
     features?: FeatureFlags
-    /** 本群邮件文案。空字符串表示该项用全局模板 */
+    /** 本群邮件文案。空字符串表示该项用全局模板。勾选为 null 表示跟随全局 */
     mailTemplate?: MailTemplate
 }
 
@@ -195,8 +218,10 @@ export interface GroupInfo {
         mailJoin: boolean
         mailLeave: boolean
     }
-    /** 本群覆盖的邮件文案。两项都空表示完全使用全局模板 */
+    /** 本群覆盖的邮件文案。文本都空且勾选跟随全局时，表示完全使用全局 */
     mailTemplate?: MailTemplate
+    /** 全局是否勾选「与入群邮件一致」。本群未单独指定时用来说明当前结果 */
+    globalLeaveFollowJoin?: boolean
 }
 
 export interface FriendInfo {

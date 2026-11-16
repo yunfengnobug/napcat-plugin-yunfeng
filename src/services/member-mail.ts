@@ -11,7 +11,8 @@
  * - get_stranger_info：成员资料查不到时再取昵称（user_id）
  *
  * 收件人固定是该成员的 QQ 邮箱（QQ号@qq.com）。没有可用 QQ 号就不发，也不编造地址。
- * 主题和正文用全局模板，群里填写了的项覆盖全局；留空不会发空白邮件。
+ * 入群用入群模板，退群默认用退群模板。勾选「与入群邮件一致」时，退群改用解析后的入群模板，变量仍按退群事件替换。
+ * 群里留空的项回退到全局；留空不会发空白邮件。
  * 发信失败只记日志。
  */
 
@@ -162,10 +163,11 @@ export async function handleMemberMailNotice(ctx: NapCatPluginContext, rawEvent:
         if (isDuplicate(dedupeKey)) return;
 
         const names = await lookupNames(ctx, groupId, userId);
+        // 退群若勾选「与入群邮件一致」，这里是入群模板；变量仍按本次通知（入群或退群）填写
         const template = resolveMemberMailTemplate(
-            mail.subject,
-            mail.body,
+            mail,
             pluginState.config.groupConfigs[groupId]?.mailTemplate,
+            noticeType === 'group_increase' ? 'join' : 'leave',
         );
         const content = buildMemberNoticeMail({
             noticeType,

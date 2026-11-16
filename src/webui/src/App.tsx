@@ -19,7 +19,7 @@ const pageConfig: Record<PageId, { title: string; desc: string }> = {
     groups: { title: '群管理', desc: '左侧选群，右侧配置授权、开机、功能与邮件文案' },
     customApi: { title: '自定义 API', desc: '触发词 → 请求外部接口 → 拼话术发送' },
     config: { title: 'Webhook 通知', desc: '推送地址、密钥与相关基础参数' },
-    mail: { title: '邮件通知', desc: '配置 SMTP、发件人名称和入群/退群邮件文案。收件人是成员自己的 QQ 邮箱' },
+    mail: { title: '邮件通知', desc: '配置 SMTP、发件人名称，以及入群和退群邮件文案。退群可勾选与入群一致。收件人是成员自己的 QQ 邮箱' },
 }
 
 function App() {

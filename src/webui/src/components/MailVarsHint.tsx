@@ -17,7 +17,7 @@ const VARS: { token: string; desc: string }[] = [
 export default function MailVarsHint() {
     return (
         <div className="text-xs text-gray-400 leading-relaxed">
-            <div className="mb-1">主题和正文里可以写这些变量：</div>
+            <div className="mb-1">主题和正文里可以写这些变量。勾选「与入群邮件一致」时，退群仍替换这些变量，取值按退群事件来：</div>
             <ul className="space-y-0.5">
                 {VARS.map((item) => (
                     <li key={item.token}>

@@ -16,7 +16,7 @@ import path from 'path';
 import type { NapCatPluginContext, PluginLogger } from 'napcat-types/napcat-onebot/network/plugin/types';
 import { DEFAULT_CONFIG, DEFAULT_MAIL } from '../config';
 import { normalizeMailSender } from '../services/mail-address';
-import { cleanTemplateBody, cleanTemplateSubject, normalizeGroupMailTemplate } from '../services/mail-template';
+import { cleanTemplateBody, cleanTemplateSubject, normalizeGlobalLeaveCopy, normalizeGroupMailTemplate } from '../services/mail-template';
 import type {
     CustomApiBodyType,
     CustomApiExpectedCondition,
@@ -65,6 +65,11 @@ function sanitizeMail(raw: unknown): MailSettings {
     if (typeof raw.body === 'string') {
         mail.body = cleanTemplateBody(raw.body) || DEFAULT_MAIL.body;
     }
+    // 旧的一套文案拆成入群 / 退群两份。已有退群字段时不拿入群文案覆盖
+    const leaveCopy = normalizeGlobalLeaveCopy(mail, raw);
+    mail.leaveFollowJoin = leaveCopy.leaveFollowJoin;
+    mail.leaveSubject = leaveCopy.leaveSubject;
+    mail.leaveBody = leaveCopy.leaveBody;
 
     const portRaw = typeof raw.port === 'string' && raw.port.trim() ? Number(raw.port) : raw.port;
     if (typeof portRaw === 'number' && Number.isFinite(portRaw)) {
@@ -618,7 +623,7 @@ class PluginState {
         if (config.features) {
             next.features = { ...prev.features, ...config.features };
         }
-        // 主题和正文都空：删掉群覆盖，发信时用全局文案
+        // 入群、退群文案都空，且没有单独指定是否与入群一致：删掉群覆盖，发信时用全局
         if (config.mailTemplate) {
             const mailTemplate = normalizeGroupMailTemplate(config.mailTemplate);
             if (mailTemplate) next.mailTemplate = mailTemplate;

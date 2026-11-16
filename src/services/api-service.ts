@@ -53,6 +53,7 @@ function buildGroupView(
 ) {
     const groupId = String(group.group_id);
     const cfg = pluginState.getGroupConfig(groupId);
+    const storedTemplate = pluginState.config.groupConfigs[groupId]?.mailTemplate;
 
     return {
         group_id: group.group_id,
@@ -71,11 +72,20 @@ function buildGroupView(
             mailJoin: pluginState.getFeatureFlag(groupId, 'mailJoin'),
             mailLeave: pluginState.getFeatureFlag(groupId, 'mailLeave'),
         },
-        // 空字符串表示这一项沿用全局模板
+        // 空字符串表示这一项沿用全局。leaveFollowJoin 为 null 表示跟随全局勾选
         mailTemplate: {
-            subject: pluginState.config.groupConfigs[groupId]?.mailTemplate?.subject || '',
-            body: pluginState.config.groupConfigs[groupId]?.mailTemplate?.body || '',
+            subject: storedTemplate?.subject || '',
+            body: storedTemplate?.body || '',
+            leaveSubject: storedTemplate?.leaveSubject || '',
+            leaveBody: storedTemplate?.leaveBody || '',
+            leaveFollowJoin: storedTemplate?.leaveFollowJoin === true
+                ? true
+                : storedTemplate?.leaveFollowJoin === false
+                    ? false
+                    : null,
         },
+        // 全局「与入群邮件一致」。本群未单独指定时，页面用它说明当前跟随结果
+        globalLeaveFollowJoin: pluginState.config.mail.leaveFollowJoin === true,
     };
 }
 
@@ -110,12 +120,27 @@ function applyGroupPatch(groupId: string, body: Record<string, unknown>): GroupC
     }
 
     if (body.mailTemplate && typeof body.mailTemplate === 'object' && !Array.isArray(body.mailTemplate)) {
-        const template = body.mailTemplate as { subject?: unknown; body?: unknown };
-        // 两项都空时 updateGroupConfig 会去掉群覆盖，发信回退到全局文案
+        const template = body.mailTemplate as {
+            subject?: unknown;
+            body?: unknown;
+            leaveSubject?: unknown;
+            leaveBody?: unknown;
+            leaveFollowJoin?: unknown;
+        };
+        // 文案都空且未单独指定勾选时，updateGroupConfig 会去掉群覆盖，发信回退到全局
+        // null / 缺省表示这个勾选跟随全局，不把退群文案改写成入群文案
+        const leaveFollowJoin = template.leaveFollowJoin === true
+            ? true
+            : template.leaveFollowJoin === false
+                ? false
+                : null;
         pluginState.updateGroupConfig(groupId, {
             mailTemplate: {
                 subject: typeof template.subject === 'string' ? template.subject : '',
                 body: typeof template.body === 'string' ? template.body : '',
+                leaveSubject: typeof template.leaveSubject === 'string' ? template.leaveSubject : '',
+                leaveBody: typeof template.leaveBody === 'string' ? template.leaveBody : '',
+                leaveFollowJoin,
             },
         });
     }
