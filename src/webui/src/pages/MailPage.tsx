@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { noAuthFetch } from '../utils/api'
 import { showToast } from '../hooks/useToast'
 import type { MailEncryption, MailSettings, PluginConfig } from '../types'
@@ -56,6 +56,8 @@ export default function MailSettingsPanel({ section, onOpenSection }: {
     const [saving, setSaving] = useState(false)
     const [testTo, setTestTo] = useState('')
     const [testing, setTesting] = useState(false)
+    /** 正在保存的发信配置。点发送测试邮件时先等它结束，试发才用得到刚改的入群文案 */
+    const pendingSave = useRef<Promise<boolean> | null>(null)
 
     const fetchConfig = useCallback(async () => {
         try {
@@ -71,7 +73,7 @@ export default function MailSettingsPanel({ section, onOpenSection }: {
 
     useEffect(() => { fetchConfig() }, [fetchConfig])
 
-    const saveMail = useCallback(async (next: MailSettings, options?: { clearPassword?: boolean }) => {
+    const saveMail = useCallback(async (next: MailSettings, options?: { clearPassword?: boolean }): Promise<boolean> => {
         // 主题或正文被清空时恢复初始文案，避免保存成空白邮件
         const payload: MailSettings = {
             ...next,
@@ -84,32 +86,42 @@ export default function MailSettingsPanel({ section, onOpenSection }: {
             leaveFollowJoin: next.leaveFollowJoin === true,
         }
         setSaving(true)
+        const job = (async (): Promise<boolean> => {
+            try {
+                const res = await noAuthFetch('/config', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        mail: payload,
+                        clearMailPassword: options?.clearPassword === true,
+                    }),
+                })
+                if (res.code !== 0) {
+                    showToast(res.message || '保存失败', 'error')
+                    return false
+                }
+                if (options?.clearPassword) {
+                    setPasswordSet(false)
+                    setMail({ ...payload, password: '' })
+                } else if (payload.password) {
+                    setPasswordSet(true)
+                    setMail({ ...payload, password: '' })
+                } else {
+                    setMail({ ...payload, password: '' })
+                }
+                showToast(options?.clearPassword ? '密码已清除' : '发信配置已保存', 'success')
+                return true
+            } catch {
+                showToast('保存失败', 'error')
+                return false
+            } finally {
+                setSaving(false)
+            }
+        })()
+        pendingSave.current = job
         try {
-            const res = await noAuthFetch('/config', {
-                method: 'POST',
-                body: JSON.stringify({
-                    mail: payload,
-                    clearMailPassword: options?.clearPassword === true,
-                }),
-            })
-            if (res.code !== 0) {
-                showToast(res.message || '保存失败', 'error')
-                return
-            }
-            if (options?.clearPassword) {
-                setPasswordSet(false)
-                setMail({ ...payload, password: '' })
-            } else if (payload.password) {
-                setPasswordSet(true)
-                setMail({ ...payload, password: '' })
-            } else {
-                setMail({ ...payload, password: '' })
-            }
-            showToast(options?.clearPassword ? '密码已清除' : '发信配置已保存', 'success')
-        } catch {
-            showToast('保存失败', 'error')
+            return await job
         } finally {
-            setSaving(false)
+            if (pendingSave.current === job) pendingSave.current = null
         }
     }, [])
 
@@ -131,6 +143,15 @@ export default function MailSettingsPanel({ section, onOpenSection }: {
         if (!to) {
             showToast('请填写测试收件人', 'warning')
             return
+        }
+        // 输入框失焦会先保存。等这次保存结束，试发才是刚写下的全局入群文案
+        const savingNow = pendingSave.current
+        if (savingNow) {
+            const saved = await savingNow
+            if (!saved) {
+                showToast('入群文案还没保存成功，测试邮件未发送', 'error')
+                return
+            }
         }
         setTesting(true)
         try {
@@ -341,6 +362,8 @@ export default function MailSettingsPanel({ section, onOpenSection }: {
             <div className="card p-5">
                 <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">发送测试邮件</h3>
                 <p className="text-xs text-gray-400 mb-4 leading-relaxed">
+                    按当前已保存的全局入群主题和正文发送，并用一份示例入群事件填好变量：
+                    群名「示例群」、群号 100000、成员「示例成员」、成员 QQ 10001、子类型「管理员同意入群」，时间为当前北京时间。
                     测试收件人只用于这一次试发，不会被保存，也不会变成入群或退群通知的收件人。
                     那些通知仍然发给成员自己的 QQ 邮箱（QQ号@qq.com）。
                 </p>
