@@ -16,7 +16,7 @@ import path from 'path';
 import type { NapCatPluginContext, PluginLogger } from 'napcat-types/napcat-onebot/network/plugin/types';
 import { DEFAULT_CONFIG, DEFAULT_MAIL } from '../config';
 import { normalizeMailSender } from '../services/mail-address';
-import { cleanTemplateBody, cleanTemplateSubject, normalizeGlobalLeaveCopy, normalizeGroupMailTemplate } from '../services/mail-template';
+import { cleanTemplateBody, cleanTemplateSubject, globalLeaveFollowShouldDefault, inheritedGroupOwnsLeaveCopy, normalizeGlobalLeaveCopy, normalizeGroupMailTemplate } from '../services/mail-template';
 import type {
     CustomApiBodyType,
     CustomApiExpectedCondition,
@@ -68,6 +68,7 @@ function sanitizeMail(raw: unknown): MailSettings {
     // 旧的一套文案拆成入群 / 退群两份。已有退群字段时不拿入群文案覆盖
     const leaveCopy = normalizeGlobalLeaveCopy(mail, raw);
     mail.leaveFollowJoin = leaveCopy.leaveFollowJoin;
+    mail.leaveFollowJoinChosen = leaveCopy.leaveFollowJoinChosen === true;
     mail.leaveSubject = leaveCopy.leaveSubject;
     mail.leaveBody = leaveCopy.leaveBody;
 
@@ -574,10 +575,11 @@ class PluginState {
      * clearMailPassword 为 true 时才真正清空密码
      */
     updateConfig(partial: Partial<PluginConfig>, options?: { clearMailPassword?: boolean }): void {
-        const next = { ...this.config, ...partial };
+        const prev = this.config;
+        const next = { ...prev, ...partial };
         if (partial.featureDefaults) {
             next.featureDefaults = {
-                ...this.config.featureDefaults,
+                ...prev.featureDefaults,
                 ...partial.featureDefaults,
             };
         }
@@ -588,13 +590,33 @@ class PluginState {
             ? partial.mail
             : null;
         if (mailPatch || options?.clearMailPassword) {
-            const merged = sanitizeMail({ ...this.config.mail, ...(mailPatch || {}) });
+            const merged = sanitizeMail({ ...prev.mail, ...(mailPatch || {}) });
             if (options?.clearMailPassword) {
                 merged.password = '';
             } else if (!merged.password) {
-                merged.password = this.config.mail.password;
+                merged.password = prev.mail.password;
+            }
+            // 这次保存真的改了勾选，才算管理员选定过。只改 SMTP 或文案时不要钉住
+            if (mailPatch && typeof mailPatch.leaveFollowJoin === 'boolean'
+                && mailPatch.leaveFollowJoin !== (prev.mail.leaveFollowJoin === true)) {
+                merged.leaveFollowJoinChosen = true;
             }
             next.mail = merged;
+        }
+        // 刚把全局「退群邮件」从关到开，且入群邮件也开着：文案仍是出厂默认时改为跟随入群
+        // 同一请求里如果带了明确的勾选，以那次保存为准，这里不再改
+        const enablingLeave = !!partial.featureDefaults
+            && prev.featureDefaults.mailLeave !== true
+            && next.featureDefaults.mailLeave === true
+            && next.featureDefaults.mailJoin === true;
+        const patchSetsFollow = !!mailPatch && typeof mailPatch.leaveFollowJoin === 'boolean';
+        if (enablingLeave && !patchSetsFollow && globalLeaveFollowShouldDefault(next.mail)) {
+            const blocked = Object.values(prev.groupConfigs).some((cfg) => inheritedGroupOwnsLeaveCopy(cfg?.mailTemplate));
+            if (blocked) {
+                this._ctx?.logger.info('未自动勾选「与入群邮件一致」：有群正在跟随全局，并且写过自己的退群文案');
+            } else {
+                next.mail = { ...next.mail, leaveFollowJoin: true, leaveFollowJoinChosen: true };
+            }
         }
         this.config = sanitizeConfig(next);
         this.saveConfig();

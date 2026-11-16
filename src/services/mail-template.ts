@@ -2,6 +2,7 @@
  * 入群 / 退群邮件的主题和正文
  * 全局的入群、退群各有一份文案。群上某一项留空就用全局对应项，不会因此发空白邮件。
  * 「与入群邮件一致」勾选后，退群改用解析后的入群主题和正文，变量仍按退群事件替换。
+ * 旧配置没有退群字段时，仍把当时的文案抄给退群并保持不跟随，避免改掉已经在用的退群文字。
  */
 
 import type { MailTemplate } from '../types';
@@ -55,11 +56,17 @@ export interface GlobalMailCopy {
     leaveBody?: string;
     /** true：退群沿用入群文案。缺省或 false：退群单独用退群文案 */
     leaveFollowJoin?: boolean;
+    /**
+     * 管理员是否已经明确选过这个勾选
+     * 旧配置拆分退群文案时会写成 true，避免之后打开开关又把退群改成跟随入群
+     */
+    leaveFollowJoinChosen?: boolean;
 }
 
 /**
  * 补齐全局退群文案
- * 旧配置没有退群字段时，把当时那套共用文案抄给退群，勾选保持关闭
+ * 旧配置没有退群字段时，把当时那套共用文案抄给退群，勾选保持关闭，并记为已经选定
+ * 这样之后打开「退群邮件」不会再把这份退群文字改成跟随入群
  * 已经单独存过退群文案或勾选时，不用入群文案覆盖退群；退群文字被清空则回到内置默认
  */
 export function normalizeGlobalLeaveCopy<T extends GlobalMailCopy & {
@@ -68,6 +75,7 @@ export function normalizeGlobalLeaveCopy<T extends GlobalMailCopy & {
     leaveSubject: string;
     leaveBody: string;
     leaveFollowJoin: boolean;
+    leaveFollowJoinChosen?: boolean;
 }>(mail: T, raw: object): T {
     const record = raw as Record<string, unknown>;
     const hasLeaveSubject = 'leaveSubject' in record;
@@ -77,6 +85,7 @@ export function normalizeGlobalLeaveCopy<T extends GlobalMailCopy & {
         return {
             ...mail,
             leaveFollowJoin: false,
+            leaveFollowJoinChosen: true,
             leaveSubject: mail.subject,
             leaveBody: mail.body,
         };
@@ -84,6 +93,7 @@ export function normalizeGlobalLeaveCopy<T extends GlobalMailCopy & {
     return {
         ...mail,
         leaveFollowJoin: record.leaveFollowJoin === true,
+        leaveFollowJoinChosen: record.leaveFollowJoinChosen === true,
         leaveSubject: hasLeaveSubject
             ? (cleanTemplateSubject(record.leaveSubject) || DEFAULT_MAIL_SUBJECT)
             : mail.leaveSubject,
@@ -91,6 +101,51 @@ export function normalizeGlobalLeaveCopy<T extends GlobalMailCopy & {
             ? (cleanTemplateBody(record.leaveBody) || DEFAULT_MAIL_BODY)
             : mail.leaveBody,
     };
+}
+
+/**
+ * 某个群刚打开退群邮件时，要不要把「与入群邮件一致」写成 true
+ * 入群邮件没开、已经明确选过跟随或不跟随、或已经写过退群主题/正文时，都不要改
+ * 旧数据把共用文案拆开时会写成 leaveFollowJoin false，这里会直接跳过，不覆盖那份退群文字
+ */
+export function groupLeaveFollowShouldDefault(
+    template: GroupMailCopyOverride | null | undefined,
+    joinEnabled: boolean,
+    leaveEnabled: boolean,
+): boolean {
+    if (!leaveEnabled || !joinEnabled) return false;
+    if (!template) return true;
+    if (template.leaveFollowJoin === true || template.leaveFollowJoin === false) return false;
+    if (cleanTemplateSubject(template.leaveSubject) || cleanTemplateBody(template.leaveBody)) return false;
+    return true;
+}
+
+/**
+ * 全局刚打开退群邮件时，要不要把勾选改成 true
+ * 管理员手动改过勾选、退群文字和入群不同、或已经不是内置默认文案时，保持原勾选
+ * 出厂配置的勾选是关闭，但还没人改过文字，也没钉住这个选择，这时才改成跟随入群
+ */
+export function globalLeaveFollowShouldDefault(mail: GlobalMailCopy): boolean {
+    if (mail.leaveFollowJoinChosen === true) return false;
+    if (mail.leaveFollowJoin === true) return false;
+    const subject = cleanTemplateSubject(mail.subject);
+    const body = cleanTemplateBody(mail.body);
+    const leaveSubject = cleanTemplateSubject(mail.leaveSubject);
+    const leaveBody = cleanTemplateBody(mail.leaveBody);
+    if (subject !== leaveSubject || body !== leaveBody) return false;
+    if (subject !== DEFAULT_MAIL_SUBJECT || body !== DEFAULT_MAIL_BODY) return false;
+    if (leaveSubject !== DEFAULT_MAIL_SUBJECT || leaveBody !== DEFAULT_MAIL_BODY) return false;
+    return true;
+}
+
+/**
+ * 群还在跟随全局勾选，并且自己写过退群主题或正文
+ * 这时如果把全局勾选改成跟随入群，这份退群文字就不会再被发出去
+ */
+export function inheritedGroupOwnsLeaveCopy(template: GroupMailCopyOverride | null | undefined): boolean {
+    if (!template) return false;
+    if (template.leaveFollowJoin === true || template.leaveFollowJoin === false) return false;
+    return !!(cleanTemplateSubject(template.leaveSubject) || cleanTemplateBody(template.leaveBody));
 }
 
 /**

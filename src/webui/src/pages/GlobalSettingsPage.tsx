@@ -5,6 +5,7 @@ import type { PluginConfig } from '../types'
 import { IconSettings } from '../components/icons'
 import Drawer from '../components/Drawer'
 import FeatureToggleRow from '../components/FeatureToggleRow'
+import { InheritanceBadge } from '../components/InheritanceCue'
 import { BasicSettingsPanel, WebhookSettingsPanel } from './ConfigPage'
 import CustomApiPage from './CustomApiPage'
 import MailSettingsPanel, { type MailConfigSection } from './MailPage'
@@ -20,6 +21,7 @@ export default function GlobalSettingsPage() {
     const [config, setConfig] = useState<PluginConfig | null>(null)
     const [saving, setSaving] = useState(false)
     const [drawer, setDrawer] = useState<SettingsDrawer | null>(null)
+    const [mailReloadKey, setMailReloadKey] = useState(0)
     const closeDrawer = useCallback(() => setDrawer(null), [])
 
     const fetchConfig = useCallback(async () => {
@@ -53,7 +55,10 @@ export default function GlobalSettingsPage() {
                 showToast(res.message || '保存失败', 'error')
                 return
             }
-            setConfig({ ...config, featureDefaults })
+            const again = await noAuthFetch<PluginConfig>('/config')
+            if (again.code === 0 && again.data) setConfig(again.data)
+            else setConfig({ ...config, featureDefaults })
+            setMailReloadKey((n) => n + 1)
             showToast('全局设置已保存', 'success')
         } catch {
             showToast('保存失败', 'error')
@@ -115,7 +120,10 @@ export default function GlobalSettingsPage() {
                     />
                     <FeatureToggleRow
                         label="退群邮件"
-                        desc="开关是新群首次开机的初始值。退群文案和「与入群邮件一致」点右侧「配置」。SMTP 在入群邮件的配置里"
+                        desc="开关是新群首次开机的初始值。打开时，若入群邮件也开着、退群文案仍是最初那套且没有手动取消过「与入群邮件一致」，会默认勾上。文案点右侧「配置」"
+                        badges={config.mail?.leaveFollowJoin === true
+                            ? <InheritanceBadge tone="follow">与入群邮件一致</InheritanceBadge>
+                            : undefined}
                         checked={config.featureDefaults?.mailLeave === true}
                         onChange={(v) => saveFeatureDefaults({ mailLeave: v })}
                         onConfigure={() => setDrawer('mailLeave')}
@@ -155,7 +163,7 @@ export default function GlobalSettingsPage() {
                 onClose={closeDrawer}
             >
                 {(drawer === 'mailJoin' || drawer === 'mailLeave') && (
-                    <MailSettingsPanel section={mailSection} onOpenSection={openMailSection} />
+                    <MailSettingsPanel section={mailSection} onOpenSection={openMailSection} reloadKey={mailReloadKey} />
                 )}
             </Drawer>
 

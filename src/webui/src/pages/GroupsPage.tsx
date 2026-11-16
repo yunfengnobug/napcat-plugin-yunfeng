@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef, type ReactElement } from 'react'
 import { noAuthFetch } from '../utils/api'
 import { showToast } from '../hooks/useToast'
 import type { GroupInfo } from '../types'
@@ -6,6 +6,7 @@ import { IconSearch, IconRefresh, IconCheck, IconX } from '../components/icons'
 import MailVarsHint from '../components/MailVarsHint'
 import Drawer from '../components/Drawer'
 import FeatureToggleRow from '../components/FeatureToggleRow'
+import { InheritanceBadge, InheritanceBanner, mailInheritCues, type MailInheritCues } from '../components/InheritanceCue'
 import { WebhookSettingsPanel } from './ConfigPage'
 import CustomApiPage from './CustomApiPage'
 
@@ -14,7 +15,8 @@ type GroupFeatureDrawer = 'webhook' | 'customApi' | 'mailJoin' | 'mailLeave'
 
 export default function GroupsPage() {
     const [groups, setGroups] = useState<GroupInfo[]>([])
-    const [loading, setLoading] = useState(true)
+    // 只有第一次拉取才用整页加载。之后刷新不能卸掉列表，否则勾选和抽屉草稿会一起丢掉
+    const [ready, setReady] = useState(false)
     const [search, setSearch] = useState('')
     const [selectedId, setSelectedId] = useState<number | null>(null)
     const [checked, setChecked] = useState<Set<number>>(new Set())
@@ -24,20 +26,31 @@ export default function GroupsPage() {
     const closeDrawer = useCallback(() => setDrawer(null), [])
 
     const fetchGroups = useCallback(async () => {
-        setLoading(true)
         try {
             const res = await noAuthFetch<GroupInfo[]>('/groups')
             if (res.code === 0 && res.data) {
-                setGroups(res.data)
+                const list = res.data
+                setGroups(list)
+                // 群对象会被换成新的，勾选按群号保留；群已经不在列表里才去掉
+                const alive = new Set(list.map((g) => g.group_id))
+                setChecked((prev) => {
+                    let dropped = false
+                    const next = new Set<number>()
+                    for (const id of prev) {
+                        if (alive.has(id)) next.add(id)
+                        else dropped = true
+                    }
+                    return dropped ? next : prev
+                })
                 setSelectedId((prev) => {
-                    if (prev && res.data!.some((g) => g.group_id === prev)) return prev
-                    return res.data![0]?.group_id ?? null
+                    if (prev && list.some((g) => g.group_id === prev)) return prev
+                    return list[0]?.group_id ?? null
                 })
             }
         } catch {
             showToast('获取群列表失败', 'error')
         } finally {
-            setLoading(false)
+            setReady(true)
         }
     }, [])
 
@@ -58,6 +71,14 @@ export default function GroupsPage() {
         () => groups.find((g) => g.group_id === selectedId) || null,
         [groups, selectedId]
     )
+    const selectedMailCues = mailInheritCues({
+        subject: selected?.mailTemplate?.subject,
+        body: selected?.mailTemplate?.body,
+        leaveSubject: selected?.mailTemplate?.leaveSubject,
+        leaveBody: selected?.mailTemplate?.leaveBody,
+        leaveFollowJoin: selected?.mailTemplate?.leaveFollowJoin,
+        globalLeaveFollowJoin: selected?.globalLeaveFollowJoin,
+    })
 
     const patchGroup = async (groupId: number, body: Record<string, unknown>, okMsg: string) => {
         try {
@@ -92,7 +113,7 @@ export default function GroupsPage() {
             }
             await fetchGroups()
             showToast(okMsg, 'success')
-            setChecked(new Set())
+            // 开机、关机、延长和功能开关都不把群移出列表，勾选留着，方便接着做下一个批量操作
         } catch {
             showToast('批量操作失败', 'error')
         }
@@ -107,7 +128,21 @@ export default function GroupsPage() {
         })
     }
 
-    if (loading) {
+    // 全选只动当前看得到的群。筛选外已经勾上的继续留着
+    const toggleVisible = (selectAll: boolean) => {
+        const visible = filtered.map((g) => g.group_id)
+        setChecked((prev) => {
+            const next = new Set(prev)
+            if (selectAll) {
+                for (const id of visible) next.add(id)
+            } else {
+                for (const id of visible) next.delete(id)
+            }
+            return next
+        })
+    }
+
+    if (!ready) {
         return (
             <div className="flex items-center justify-center h-64 empty-state">
                 <div className="flex flex-col items-center gap-3">
@@ -185,7 +220,14 @@ export default function GroupsPage() {
                     共 {groups.length} 群 · 可处理 {groups.filter((g) => g.canProcess).length}
                 </p>
 
-                <div className="card flex-1 overflow-y-auto max-h-[60vh] lg:max-h-none divide-y divide-gray-50 dark:divide-gray-800/50">
+                <div className="card flex-1 overflow-y-auto max-h-[60vh] lg:max-h-none">
+                    <VisibleSelectAll
+                        ids={filtered.map((g) => g.group_id)}
+                        checked={checked}
+                        filtered={!!search}
+                        onToggle={toggleVisible}
+                    />
+                    <div className="divide-y divide-gray-50 dark:divide-gray-800/50">
                     {filtered.map((g) => {
                         const active = selectedId === g.group_id
                         return (
@@ -224,6 +266,7 @@ export default function GroupsPage() {
                             {search ? '没有匹配的群' : '暂无群数据'}
                         </div>
                     )}
+                    </div>
                 </div>
             </div>
 
@@ -325,11 +368,13 @@ export default function GroupsPage() {
                                 <p className="text-xs text-gray-400 mt-1">
                                     以下为本群独立开关。未开机前显示的是全局初始预览；开机后改「全局设置」里的开关不会再影响本群。
                                     有参数的功能，点开关后面的「配置」。
+                                    蓝色「已采用全局配置」表示没有本群覆盖；粉色「与入群邮件一致」表示退群在用入群文案；橙色「这项跟随全局」表示这个勾选还跟着全局，但文案已经是本群的。
                                 </p>
                             </div>
                             <FeatureToggleRow
                                 label="Webhook 通知"
                                 desc="开启后，外部通知会推到本群（仍需已授权且开机）。地址、密钥和话术点右侧「配置」，那是所有群共用的"
+                                badges={<InheritanceBadge tone="global">已采用全局配置</InheritanceBadge>}
                                 checked={selected.features.notify}
                                 onChange={(v) => patchGroup(
                                     selected.group_id,
@@ -341,6 +386,7 @@ export default function GroupsPage() {
                             <FeatureToggleRow
                                 label="自定义 API"
                                 desc="开启后，本群消息可按规则触发外部接口并回发话术。规则点右侧「配置」，规则本身是全局的"
+                                badges={<InheritanceBadge tone="global">已采用全局配置</InheritanceBadge>}
                                 checked={selected.features.customApi === true}
                                 onChange={(v) => patchGroup(
                                     selected.group_id,
@@ -352,6 +398,7 @@ export default function GroupsPage() {
                             <FeatureToggleRow
                                 label="入群邮件"
                                 desc="有人入群时，给该成员自己的 QQ 邮箱（QQ号@qq.com）发信。点右侧「配置」写本群主题和正文。SMTP 在全局设置的入群邮件配置里"
+                                badges={mailRowBadges(selectedMailCues, 'join')}
                                 checked={selected.features.mailJoin === true}
                                 onChange={(v) => patchGroup(
                                     selected.group_id,
@@ -362,7 +409,8 @@ export default function GroupsPage() {
                             />
                             <FeatureToggleRow
                                 label="退群邮件"
-                                desc="有人退群时，给该成员自己的 QQ 邮箱（QQ号@qq.com）发信。点右侧「配置」写本群退群文案，或设置是否与入群邮件一致"
+                                desc="有人退群时，给该成员自己的 QQ 邮箱（QQ号@qq.com）发信。点右侧「配置」写本群退群文案，或设置是否与入群邮件一致。入群邮件也开着、且没单独写过退群文案时，打开会默认与入群一致"
+                                badges={mailRowBadges(selectedMailCues, 'leave')}
                                 checked={selected.features.mailLeave === true}
                                 onChange={(v) => patchGroup(
                                     selected.group_id,
@@ -385,6 +433,13 @@ export default function GroupsPage() {
                     badge="失焦后保存"
                     onClose={closeDrawer}
                 >
+                    <div className="mb-4">
+                        <InheritanceBanner
+                            tone="global"
+                            title="已采用全局配置"
+                            detail="这个群没有单独的推送地址、密钥或话术。下面改的是全局 Webhook，所有开启了通知的群一起用。"
+                        />
+                    </div>
                     <div className="mb-4 rounded-lg border border-amber-200/60 dark:border-amber-500/20 bg-amber-50/80 dark:bg-amber-500/5 px-4 py-3 text-xs text-amber-800 dark:text-amber-200/90 leading-relaxed">
                         本群没有单独的推送地址。下面改的是全局 Webhook，会作用到每一个开启了通知的群。
                     </div>
@@ -397,6 +452,13 @@ export default function GroupsPage() {
                     wide
                     onClose={closeDrawer}
                 >
+                    <div className="mb-4">
+                        <InheritanceBanner
+                            tone="global"
+                            title="已采用全局配置"
+                            detail="规则不按群各存一份。这个群只有开或关，下面改的是所有群共用的规则。"
+                        />
+                    </div>
                     <div className="mb-4 rounded-lg border border-amber-200/60 dark:border-amber-500/20 bg-amber-50/80 dark:bg-amber-500/5 px-4 py-3 text-xs text-amber-800 dark:text-amber-200/90 leading-relaxed">
                         规则不按群各存一份。可以在规则里选择发送到本群。关闭抽屉不会自动保存，请先点「保存全部」。
                     </div>
@@ -479,6 +541,14 @@ function GroupMailCopy({ group, section, onOpenSection, onSave }: {
     const usingGlobal = mode === 'inherit'
         && !subject.trim() && !body.trim()
         && !leaveSubject.trim() && !leaveBody.trim()
+    const draftCues = mailInheritCues({
+        subject,
+        body,
+        leaveSubject,
+        leaveBody,
+        leaveFollowJoin: mode === 'yes' ? true : mode === 'no' ? false : null,
+        globalLeaveFollowJoin: globalFollow,
+    })
 
     const payload = () => ({
         subject: subject.trim(),
@@ -503,8 +573,8 @@ function GroupMailCopy({ group, section, onOpenSection, onSave }: {
                     ? '只影响这个群的入群主题和正文。留空就用全局设置里入群邮件的对应文案，不会发出空白邮件。'
                     : '只影响这个群的退群文案，以及本群是否与入群邮件一致。留空就用全局退群文案，不会发出空白邮件。'}
                 收件人仍然是成员自己的 QQ 邮箱（QQ号@qq.com）。
-                {usingGlobal ? ' 当前没有本群覆盖，这个群使用全局文案。' : ''}
             </p>
+            <MailInheritNotices cues={draftCues} section={section} />
             {onOpenSection && (
                 <button
                     type="button"
@@ -617,6 +687,109 @@ function GroupMailCopy({ group, section, onOpenSection, onSave }: {
                     清空并使用全局文案
                 </button>
             </div>
+        </div>
+    )
+}
+
+/** 当前筛选结果的全选。半选表示只勾了其中一部分，再点一次会把这些群都选上 */
+function VisibleSelectAll({ ids, checked, filtered, onToggle }: {
+    ids: number[]
+    checked: Set<number>
+    filtered: boolean
+    onToggle: (selectAll: boolean) => void
+}) {
+    const ref = useRef<HTMLInputElement>(null)
+    const selectedCount = ids.filter((id) => checked.has(id)).length
+    const all = ids.length > 0 && selectedCount === ids.length
+    const partial = selectedCount > 0 && !all
+    useEffect(() => {
+        if (ref.current) ref.current.indeterminate = partial
+    }, [partial])
+    return (
+        <label className={`sticky top-0 z-10 flex items-center gap-2 border-b border-gray-100 bg-white px-3 py-2 dark:border-gray-800 dark:bg-[#1e1e20] ${ids.length === 0 ? 'opacity-50' : 'cursor-pointer'}`}>
+            <input
+                ref={ref}
+                type="checkbox"
+                className="rounded border-gray-300 dark:border-gray-600"
+                checked={all}
+                disabled={ids.length === 0}
+                aria-label={all ? '取消全选' : '全选'}
+                onChange={() => onToggle(!all)}
+            />
+            <span className="text-xs font-semibold text-gray-800 dark:text-gray-100">{all ? '取消全选' : '全选'}</span>
+            <span className="text-[11px] text-gray-500 dark:text-gray-400">
+                {filtered ? `当前筛选 ${ids.length} 个群` : '勾选后可批量操作'}
+                {checked.size > 0 ? ` · 已选 ${checked.size}` : ''}
+            </span>
+        </label>
+    )
+}
+
+function mailRowBadges(cues: MailInheritCues, kind: 'join' | 'leave') {
+    const nodes: ReactElement[] = []
+    if (kind === 'join' && cues.joinUsesGlobal) {
+        nodes.push(<InheritanceBadge key="global" tone="global">已采用全局配置</InheritanceBadge>)
+    }
+    if (kind === 'leave' && cues.leaveUsesGlobal) {
+        nodes.push(<InheritanceBadge key="global" tone="global">已采用全局配置</InheritanceBadge>)
+    }
+    if (kind === 'leave' && cues.leaveFollowsJoin) {
+        nodes.push(<InheritanceBadge key="follow" tone="follow">与入群邮件一致</InheritanceBadge>)
+    }
+    if (kind === 'leave' && cues.showInheritChoice) {
+        nodes.push(<InheritanceBadge key="choice" tone="choice">这项跟随全局</InheritanceBadge>)
+    }
+    if (nodes.length === 0) return null
+    return <>{nodes}</>
+}
+
+/** 抽屉里的继承说明，和功能行上的标记用同一套判断 */
+function MailInheritNotices({ cues, section }: { cues: MailInheritCues; section: 'join' | 'leave' }) {
+    const items: { key: string; tone: 'global' | 'follow' | 'choice'; title: string; detail: string }[] = []
+    if (section === 'join' && cues.joinUsesGlobal) {
+        items.push({
+            key: 'join-global',
+            tone: 'global',
+            title: '已采用全局配置',
+            detail: '这个群没有写自己的入群主题和正文，发出去的是全局入群文案，不会是一封空白邮件。',
+        })
+    }
+    if (section === 'leave' && cues.leaveFollowsJoin) {
+        items.push({
+            key: 'leave-follow',
+            tone: 'follow',
+            title: '与入群邮件一致',
+            detail: '退群邮件使用解析后的入群主题和正文。变量仍按退群事件替换，不会把退群写成入群。',
+        })
+    }
+    if (section === 'leave' && cues.leaveUsesGlobal) {
+        items.push({
+            key: 'leave-global',
+            tone: 'global',
+            title: '已采用全局配置',
+            detail: cues.leaveFollowsJoin
+                ? '入群主题和正文也没有本群覆盖，所以退群实际用的是全局入群文案。'
+                : cues.leaveChoice === 'no'
+                    ? '退群主题和正文没有本群覆盖，发信使用全局退群文案。本群已单独选择不与入群邮件一致。'
+                    : '这个群没有单独写退群文案，也没有单独指定是否与入群一致，目前按全局配置发信。',
+        })
+    }
+    if (section === 'leave' && cues.showInheritChoice) {
+        items.push({
+            key: 'leave-choice',
+            tone: 'choice',
+            title: '这项跟随全局',
+            detail: cues.leaveFollowsJoin
+                ? '「与入群邮件一致」没有单独指定，当前跟着全局勾选，所以退群使用入群文案。本群写过的入群文字仍然有效。'
+                : '「与入群邮件一致」没有单独指定，当前跟着全局（未勾选）。下面的退群文字是这个群自己的。',
+        })
+    }
+    if (items.length === 0) return null
+    return (
+        <div className="space-y-2">
+            {items.map((item) => (
+                <InheritanceBanner key={item.key} tone={item.tone} title={item.title} detail={item.detail} />
+            ))}
         </div>
     )
 }
