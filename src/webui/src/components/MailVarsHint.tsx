@@ -1,6 +1,6 @@
 /**
  * 入群 / 退群邮件文案可用变量
- * 邮件通知页和群管理里的覆盖框共用这一段说明
+ * 全局邮件抽屉和群管理的本群文案抽屉共用这一段说明
  */
 const VARS: { token: string; desc: string }[] = [
     { token: '{{group_name}}', desc: '群名称' },

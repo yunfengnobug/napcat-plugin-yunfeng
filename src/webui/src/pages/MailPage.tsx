@@ -38,11 +38,19 @@ const EMPTY_MAIL: MailSettings = {
     leaveFollowJoin: false,
 }
 
+export type MailConfigSection = 'join' | 'leave'
+
 /**
- * 发信配置页
- * 这里只保存 SMTP 和发件人。入群 / 退群的收件人是成员自己的 QQ 邮箱，不在这里填写。
+ * 发信配置，由全局设置里入群 / 退群邮件开关后面的「配置」打开
+ * join：SMTP、发件人、测试邮件、入群文案。SMTP 是全局的，不按群再存一份
+ * leave：退群文案和「与入群邮件一致」。这里不再放一套 SMTP 表单
+ * 两个抽屉互相跳转时不卸载，已经填过、尚未失焦保存的内容还在这一份状态里
+ * 入群 / 退群的收件人是成员自己的 QQ 邮箱，不在这里填写
  */
-export default function MailPage() {
+export default function MailSettingsPanel({ section, onOpenSection }: {
+    section: MailConfigSection
+    onOpenSection?: (section: MailConfigSection) => void
+}) {
     const [mail, setMail] = useState<MailSettings | null>(null)
     const [passwordSet, setPasswordSet] = useState(false)
     const [saving, setSaving] = useState(false)
@@ -153,16 +161,29 @@ export default function MailPage() {
         )
     }
 
+    const openOther = onOpenSection
+        ? () => onOpenSection(section === 'join' ? 'leave' : 'join')
+        : undefined
+
     return (
-        <div className="space-y-6 max-w-2xl stagger-children">
+        <div className="space-y-6">
             <div className="rounded-lg border border-amber-200/60 dark:border-amber-500/20 bg-amber-50/80 dark:bg-amber-500/5 px-4 py-3 text-xs text-amber-800 dark:text-amber-200/90 leading-relaxed">
                 入群和退群邮件<strong>发给发生变动的成员本人</strong>，地址是该成员的 QQ 邮箱（QQ号@qq.com）。
                 这里没有固定收件人。成员没有可用 QQ 号时会跳过并写入日志。
                 群里还要分别打开「入群邮件」「退群邮件」，并且该群已授权、已开机。发信失败只记日志，不会让插件停掉。
                 发件人名称是对方看到的名字，发件人地址才是这只邮箱；两者都不是入群或退群的收件人。
+                {section === 'join'
+                    ? ' 退群文案在「退群邮件」的配置里，两边共用这一套 SMTP。'
+                    : ' SMTP、发件人、密码和测试邮件在「入群邮件」的配置里，这里不会再存一份。'}
             </div>
+            {openOther && (
+                <button type="button" className="text-xs text-primary hover:underline" onClick={openOther}>
+                    {section === 'join' ? '去配置退群文案' : '去配置 SMTP 与发件人'}
+                </button>
+            )}
 
-            <div className="card p-5 hover-lift">
+            {section === 'join' && (
+            <div className="card p-5">
                 <h3 className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2 mb-5">
                     <IconMail size={16} className="text-gray-400" />
                     SMTP 发信
@@ -215,6 +236,7 @@ export default function MailPage() {
                     {passwordSet && (
                         <div>
                             <button
+                                type="button"
                                 className="btn btn-ghost text-xs"
                                 onClick={() => saveMail({ ...mail, password: '' }, { clearPassword: true })}
                             >
@@ -238,11 +260,13 @@ export default function MailPage() {
                     />
                 </div>
             </div>
+            )}
 
-            <div className="card p-5 hover-lift">
+            {section === 'join' && (
+            <div className="card p-5">
                 <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">入群邮件文案</h3>
                 <p className="text-xs text-gray-400 mb-4 leading-relaxed">
-                    这是所有群的默认入群主题和正文。某个群在「群管理」里另写了入群主题或正文时，用该群的；留空的那一项仍用这里的全局入群文案。
+                    这是所有群的默认入群主题和正文。某个群在「群管理」里点入群邮件的「配置」，可以另写主题或正文；留空的那一项仍用这里的全局入群文案。
                     把主题或正文清空后再保存，会恢复成最初那套文案，不会发出空白邮件。
                     未改过的默认主题里，群名最多显示 40 个字；主题一旦改成自己的文字，{'{{group_name}}'} 就是完整群名。
                 </p>
@@ -260,13 +284,18 @@ export default function MailPage() {
                         onChange={(v) => updateMail({ body: v })}
                     />
                 </div>
+                <div className="mt-5">
+                    <MailVarsHint />
+                </div>
             </div>
+            )}
 
-            <div className="card p-5 hover-lift">
+            {section === 'leave' && (
+            <div className="card p-5">
                 <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">退群邮件文案</h3>
                 <p className="text-xs text-gray-400 mb-4 leading-relaxed">
                     默认单独设置，和入群文案互不影响。初始文字与入群相同，发出去仍会写成退群，因为变量按这次事件替换。
-                    勾选后，退群改用上面的入群主题和正文，变量仍然按退群事件替换，例如 {'{{event_title}}'} 会是「退群通知」。
+                    勾选后，退群改用入群主题和正文，变量仍然按退群事件替换，例如 {'{{event_title}}'} 会是「退群通知」。
                 </p>
                 <label className="flex items-start gap-2 cursor-pointer mb-4">
                     <input
@@ -306,8 +335,10 @@ export default function MailPage() {
                     <MailVarsHint />
                 </div>
             </div>
+            )}
 
-            <div className="card p-5 hover-lift">
+            {section === 'join' && (
+            <div className="card p-5">
                 <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">发送测试邮件</h3>
                 <p className="text-xs text-gray-400 mb-4 leading-relaxed">
                     测试收件人只用于这一次试发，不会被保存，也不会变成入群或退群通知的收件人。
@@ -320,14 +351,15 @@ export default function MailPage() {
                         value={testTo}
                         onChange={(e) => setTestTo(e.target.value)}
                     />
-                    <button className="btn btn-primary text-xs shrink-0" disabled={testing} onClick={sendTest}>
+                    <button type="button" className="btn btn-primary text-xs shrink-0" disabled={testing} onClick={sendTest}>
                         {testing ? '发送中...' : '发送测试邮件'}
                     </button>
                 </div>
             </div>
+            )}
 
             {saving && (
-                <div className="saving-indicator fixed bottom-4 right-4 bg-primary text-white text-xs px-3 py-2 rounded-lg shadow-lg flex items-center gap-2">
+                <div className="saving-indicator fixed bottom-4 right-4 z-[60] bg-primary text-white text-xs px-3 py-2 rounded-lg shadow-lg flex items-center gap-2">
                     <div className="loading-spinner !w-3 !h-3 !border-[1.5px]" />
                     保存中...
                 </div>

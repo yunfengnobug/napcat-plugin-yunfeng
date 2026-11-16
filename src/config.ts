@@ -85,8 +85,8 @@ export function buildConfigSchema(ctx: NapCatPluginContext): PluginConfigSchema 
         // 冷却时间
         ctx.NapCatConfig.number('cooldownSeconds', '冷却时间（秒）', 60, '同一命令请求冷却时间，0 表示不限制'),
         // Webhook 密钥（详细配置建议在插件自带 WebUI 中管理）
-        ctx.NapCatConfig.text('webhookSecret', 'Webhook 密钥', '', '外部后台调用通知接口时需携带；建议在插件仪表盘配置页设置'),
-        // 发信参数在插件页面里编辑；这里只提示收件人规则，避免把密码放进另一套表单
-        ctx.NapCatConfig.plainText('成员入群/退群邮件请到插件页面「邮件通知」填写 SMTP、发件人名称和邮件文案。退群可以勾选「与入群邮件一致」，也可以单独写主题和正文。各群可在「群管理」里覆盖。收件人是变动成员自己的 QQ 邮箱（QQ号@qq.com），不是固定管理员邮箱。')
+        ctx.NapCatConfig.text('webhookSecret', 'Webhook 密钥', '', '外部后台调用通知接口时需携带；也可在插件页面「全局设置」里，点「Webhook 通知推群」开关后面的「配置」修改'),
+        // 发信参数在插件页面的配置抽屉里编辑；这里只提示收件人规则，避免把密码放进另一套表单
+        ctx.NapCatConfig.plainText('成员入群/退群邮件请到插件页面「全局设置」，点「入群邮件」或「退群邮件」开关后面的「配置」。SMTP、发件人名称和入群文案在入群邮件的抽屉；退群文案和「与入群邮件一致」在退群邮件的抽屉。各群在「群管理」对应开关后面的「配置」里覆盖文案。收件人是变动成员自己的 QQ 邮箱（QQ号@qq.com），不是固定管理员邮箱。')
     );
 }

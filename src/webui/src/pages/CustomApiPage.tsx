@@ -130,8 +130,9 @@ function tryFormatJson(text: string): { ok: boolean; text: string } {
 /**
  * 自定义 API 规则管理
  * 支持多接口串行：res1 → res2…；群侧需开启「自定义 API」
+ * embedded：放进配置抽屉时，规则列表贴着抽屉内容区顶部，不再为页面标题预留空隙
  */
-export default function CustomApiPage() {
+export default function CustomApiPage({ embedded = false }: { embedded?: boolean }) {
     const [rules, setRules] = useState<CustomApiRule[]>([])
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState(false)
@@ -578,8 +579,12 @@ export default function CustomApiPage() {
             </div>
 
             <div className="flex flex-col lg:flex-row lg:items-start gap-4 min-h-[480px]">
-                {/* 左侧列表：sticky 时避开顶部「自定义 API」标题栏（约 5.5rem），避免被挡住 */}
-                <div className="w-full lg:w-[220px] shrink-0 card !shadow-none hover:!transform-none hover:!shadow-none overflow-hidden flex flex-col max-h-[40vh] lg:max-h-[calc(100vh-7.5rem)] lg:sticky lg:top-[5.5rem] lg:z-10">
+                {/* 左侧列表：页面里避开顶部标题；抽屉里贴着内容区顶部 */}
+                <div className={`w-full lg:w-[220px] shrink-0 card !shadow-none hover:!transform-none hover:!shadow-none overflow-hidden flex flex-col max-h-[40vh] lg:sticky lg:z-10 ${
+                    embedded
+                        ? 'lg:max-h-[calc(100vh-9rem)] lg:top-0'
+                        : 'lg:max-h-[calc(100vh-7.5rem)] lg:top-[5.5rem]'
+                }`}>
                     <div className="px-3 py-2.5 text-xs font-medium text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-gray-800 bg-gray-50/70 dark:bg-white/[0.02] shrink-0">
                         规则列表
                     </div>
