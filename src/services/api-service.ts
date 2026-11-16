@@ -71,11 +71,16 @@ function buildGroupView(
             mailJoin: pluginState.getFeatureFlag(groupId, 'mailJoin'),
             mailLeave: pluginState.getFeatureFlag(groupId, 'mailLeave'),
         },
+        // 空字符串表示这一项沿用全局模板
+        mailTemplate: {
+            subject: pluginState.config.groupConfigs[groupId]?.mailTemplate?.subject || '',
+            body: pluginState.config.groupConfigs[groupId]?.mailTemplate?.body || '',
+        },
     };
 }
 
 /**
- * 应用单群配置补丁（开机、功能开关、授权天数）
+ * 应用单群配置补丁（开机、功能开关、授权天数、本群邮件文案）
  */
 function applyGroupPatch(groupId: string, body: Record<string, unknown>): GroupConfig {
     // 开机走专用逻辑：首次开机时写入全局功能快照
@@ -102,6 +107,17 @@ function applyGroupPatch(groupId: string, body: Record<string, unknown>): GroupC
                 pluginState.updateGroupConfig(groupId, { features: patch });
             }
         }
+    }
+
+    if (body.mailTemplate && typeof body.mailTemplate === 'object' && !Array.isArray(body.mailTemplate)) {
+        const template = body.mailTemplate as { subject?: unknown; body?: unknown };
+        // 两项都空时 updateGroupConfig 会去掉群覆盖，发信回退到全局文案
+        pluginState.updateGroupConfig(groupId, {
+            mailTemplate: {
+                subject: typeof template.subject === 'string' ? template.subject : '',
+                body: typeof template.body === 'string' ? template.body : '',
+            },
+        });
     }
 
     if (typeof body.addAuthDays === 'number') {

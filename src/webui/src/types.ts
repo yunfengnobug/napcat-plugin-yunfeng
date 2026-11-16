@@ -29,9 +29,16 @@ export interface FeatureFlags {
 /** SMTP 加密方式 */
 export type MailEncryption = 'ssl' | 'starttls' | 'none'
 
+/** 入群 / 退群邮件文案。群配置里留空的项表示沿用全局 */
+export interface MailTemplate {
+    subject: string
+    body: string
+}
+
 /**
  * 发信配置
  * 不包含固定收件人。入群 / 退群邮件发给成员自己的 QQ 邮箱（QQ号@qq.com）
+ * password 在网页上永远是空的
  */
 export interface MailSettings {
     host: string
@@ -39,7 +46,14 @@ export interface MailSettings {
     encryption: MailEncryption
     username: string
     password: string
+    /** 发件人邮箱地址 */
     from: string
+    /** 收件人看到的发件人名称。空则只发地址 */
+    fromName: string
+    /** 全局默认主题 */
+    subject: string
+    /** 全局默认正文 */
+    body: string
 }
 
 export type CustomApiTriggerType = 'exact' | 'fuzzy' | 'regex'
@@ -160,6 +174,8 @@ export interface GroupConfig {
     authExpireAt?: number
     settingsInitialized?: boolean
     features?: FeatureFlags
+    /** 本群邮件文案。空字符串表示该项用全局模板 */
+    mailTemplate?: MailTemplate
 }
 
 export interface GroupInfo {
@@ -179,6 +195,8 @@ export interface GroupInfo {
         mailJoin: boolean
         mailLeave: boolean
     }
+    /** 本群覆盖的邮件文案。两项都空表示完全使用全局模板 */
+    mailTemplate?: MailTemplate
 }
 
 export interface FriendInfo {

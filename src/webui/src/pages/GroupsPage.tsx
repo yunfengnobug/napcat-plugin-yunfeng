@@ -3,6 +3,7 @@ import { noAuthFetch } from '../utils/api'
 import { showToast } from '../hooks/useToast'
 import type { GroupInfo } from '../types'
 import { IconSearch, IconRefresh, IconCheck, IconX } from '../components/icons'
+import MailVarsHint from '../components/MailVarsHint'
 
 export default function GroupsPage() {
     const [groups, setGroups] = useState<GroupInfo[]>([])
@@ -353,8 +354,92 @@ export default function GroupsPage() {
                                 )}
                             />
                         </div>
+
+                        <GroupMailCopy
+                            key={selected.group_id}
+                            group={selected}
+                            onSave={(template, okMsg) => patchGroup(
+                                selected.group_id,
+                                { mailTemplate: template },
+                                okMsg,
+                            )}
+                        />
                     </div>
                 )}
+            </div>
+        </div>
+    )
+}
+
+/**
+ * 本群邮件文案
+ * 主题或正文留空表示用全局模板，保存空字符串不会发空白邮件
+ */
+function GroupMailCopy({ group, onSave }: {
+    group: GroupInfo
+    onSave: (template: { subject: string; body: string }, okMsg: string) => void
+}) {
+    const [subject, setSubject] = useState(group.mailTemplate?.subject || '')
+    const [body, setBody] = useState(group.mailTemplate?.body || '')
+
+    useEffect(() => {
+        setSubject(group.mailTemplate?.subject || '')
+        setBody(group.mailTemplate?.body || '')
+    }, [group.group_id, group.mailTemplate?.subject, group.mailTemplate?.body])
+
+    const usingGlobal = !subject.trim() && !body.trim()
+
+    return (
+        <div className="card p-5 space-y-4">
+            <div>
+                <h4 className="text-sm font-semibold text-gray-900 dark:text-white">本群邮件文案</h4>
+                <p className="text-xs text-gray-400 mt-1 leading-relaxed">
+                    只影响这个群的入群和退群邮件。主题或正文留空，就用「邮件通知」页的全局文案，不会发出空白邮件。
+                    收件人仍然是成员自己的 QQ 邮箱（QQ号@qq.com）。
+                    {usingGlobal ? ' 当前两项都是空的，这个群使用全局文案。' : ''}
+                </p>
+            </div>
+            <label className="block">
+                <div className="text-sm font-medium text-gray-800 dark:text-gray-200 mb-1">主题</div>
+                <div className="text-xs text-gray-400 mb-2">留空则使用全局主题</div>
+                <input
+                    className="input-field"
+                    placeholder="留空则使用全局主题"
+                    value={subject}
+                    onChange={(e) => setSubject(e.target.value)}
+                />
+            </label>
+            <label className="block">
+                <div className="text-sm font-medium text-gray-800 dark:text-gray-200 mb-1">正文</div>
+                <div className="text-xs text-gray-400 mb-2">留空则使用全局正文</div>
+                <textarea
+                    className="input-field min-h-[140px] resize-y"
+                    placeholder="留空则使用全局正文"
+                    value={body}
+                    onChange={(e) => setBody(e.target.value)}
+                />
+            </label>
+            <MailVarsHint />
+            <div className="flex flex-wrap gap-2">
+                <button
+                    className="btn btn-primary text-xs"
+                    onClick={() => onSave(
+                        { subject: subject.trim(), body: body.trim() },
+                        subject.trim() || body.trim() ? '本群邮件文案已保存' : '已改回全局邮件文案',
+                    )}
+                >
+                    保存本群文案
+                </button>
+                <button
+                    className="btn btn-ghost text-xs"
+                    onClick={() => {
+                        setSubject('')
+                        setBody('')
+                        onSave({ subject: '', body: '' }, '已改回全局邮件文案')
+                    }}
+                >
+                    清空并使用全局文案
+                </button>
             </div>
         </div>
     )

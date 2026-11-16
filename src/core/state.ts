@@ -15,6 +15,8 @@ import fs from 'fs';
 import path from 'path';
 import type { NapCatPluginContext, PluginLogger } from 'napcat-types/napcat-onebot/network/plugin/types';
 import { DEFAULT_CONFIG, DEFAULT_MAIL } from '../config';
+import { normalizeMailSender } from '../services/mail-address';
+import { cleanTemplateBody, cleanTemplateSubject, normalizeGroupMailTemplate } from '../services/mail-template';
 import type {
     CustomApiBodyType,
     CustomApiExpectedCondition,
@@ -47,7 +49,22 @@ function sanitizeMail(raw: unknown): MailSettings {
     if (typeof raw.password === 'string') {
         mail.password = raw.password.replace(/[\r\n]/g, '').slice(0, 256);
     }
-    if (typeof raw.from === 'string') mail.from = raw.from.trim().slice(0, 320);
+    // 旧配置可能把显示名写在 from 里（名称 <邮箱>）。没有 fromName 时拆出来；已经有该字段则尊重它
+    const fromRaw = typeof raw.from === 'string' ? raw.from : mail.from;
+    const hasFromName = typeof raw.fromName === 'string';
+    const sender = normalizeMailSender(
+        fromRaw,
+        hasFromName ? String(raw.fromName) : undefined,
+        hasFromName,
+    );
+    mail.from = sender.from;
+    mail.fromName = sender.fromName;
+    if (typeof raw.subject === 'string') {
+        mail.subject = cleanTemplateSubject(raw.subject) || DEFAULT_MAIL.subject;
+    }
+    if (typeof raw.body === 'string') {
+        mail.body = cleanTemplateBody(raw.body) || DEFAULT_MAIL.body;
+    }
 
     const portRaw = typeof raw.port === 'string' && raw.port.trim() ? Number(raw.port) : raw.port;
     if (typeof portRaw === 'number' && Number.isFinite(portRaw)) {
@@ -349,6 +366,8 @@ function sanitizeConfig(raw: unknown): PluginConfig {
                 }
                 cfg.features = features;
             }
+            const mailTemplate = normalizeGroupMailTemplate(groupConfig.mailTemplate);
+            if (mailTemplate) cfg.mailTemplate = mailTemplate;
             // 已开机但未标记：视为已开启过，用当前全局默认补全缺失功能项（仅迁移一次）
             if (cfg.poweredOn && !cfg.settingsInitialized) {
                 cfg.settingsInitialized = true;
@@ -598,6 +617,12 @@ class PluginState {
         const next: GroupConfig = { ...prev, ...config };
         if (config.features) {
             next.features = { ...prev.features, ...config.features };
+        }
+        // 主题和正文都空：删掉群覆盖，发信时用全局文案
+        if (config.mailTemplate) {
+            const mailTemplate = normalizeGroupMailTemplate(config.mailTemplate);
+            if (mailTemplate) next.mailTemplate = mailTemplate;
+            else delete next.mailTemplate;
         }
         this.config.groupConfigs[groupId] = next;
         this.saveConfig();

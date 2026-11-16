@@ -5,6 +5,7 @@
 
 import type { NapCatPluginContext, PluginConfigSchema } from 'napcat-types/napcat-onebot/network/plugin/types';
 import type { MailSettings, PluginConfig } from './types';
+import { DEFAULT_MAIL_BODY, DEFAULT_MAIL_SUBJECT } from './services/mail-template';
 
 /** 默认发信配置：留空即视为未配置，不会发信，也不包含任何账号口令 */
 export const DEFAULT_MAIL: MailSettings = {
@@ -14,6 +15,10 @@ export const DEFAULT_MAIL: MailSettings = {
     username: '',
     password: '',
     from: '',
+    fromName: '',
+    /** 与升级前写死的主题、正文相同，改之前行为不变 */
+    subject: DEFAULT_MAIL_SUBJECT,
+    body: DEFAULT_MAIL_BODY,
 };
 
 /** 默认配置 */
@@ -75,6 +80,6 @@ export function buildConfigSchema(ctx: NapCatPluginContext): PluginConfigSchema 
         // Webhook 密钥（详细配置建议在插件自带 WebUI 中管理）
         ctx.NapCatConfig.text('webhookSecret', 'Webhook 密钥', '', '外部后台调用通知接口时需携带；建议在插件仪表盘配置页设置'),
         // 发信参数在插件页面里编辑；这里只提示收件人规则，避免把密码放进另一套表单
-        ctx.NapCatConfig.plainText('成员入群/退群邮件请到插件页面「邮件通知」填写 SMTP。收件人是变动成员自己的 QQ 邮箱（QQ号@qq.com），不是固定管理员邮箱。')
+        ctx.NapCatConfig.plainText('成员入群/退群邮件请到插件页面「邮件通知」填写 SMTP、发件人名称和邮件文案。各群可在「群管理」里单独覆盖文案。收件人是变动成员自己的 QQ 邮箱（QQ号@qq.com），不是固定管理员邮箱。')
     );
 }

@@ -28,7 +28,18 @@ export interface FeatureFlags {
 export type MailEncryption = 'ssl' | 'starttls' | 'none';
 
 /**
- * 发信配置（只描述怎么把信送出去）
+ * 入群 / 退群邮件文案
+ * 群配置里某一项留空，表示这一项沿用全局模板
+ */
+export interface MailTemplate {
+    /** 邮件主题 */
+    subject: string;
+    /** 邮件正文 */
+    body: string;
+}
+
+/**
+ * 发信配置（只描述怎么把信送出去，以及默认文案）
  * 入群 / 退群的收件人不是这里配置的固定地址，而是成员自己的 QQ 邮箱（QQ号@qq.com）
  * 密码只写在运行时配置文件里，不要写进仓库
  */
@@ -43,8 +54,17 @@ export interface MailSettings {
     username: string;
     /** 认证密码或授权码 */
     password: string;
-    /** 发件人，邮箱地址或「名称 <邮箱>」 */
+    /** 发件人邮箱地址，不含显示名 */
     from: string;
+    /**
+     * 发件人显示名。收件人在邮箱里看到的名字
+     * 留空则 From 头只写地址
+     */
+    fromName: string;
+    /** 全局默认主题。支持 {{group_name}} 等变量 */
+    subject: string;
+    /** 全局默认正文。支持与主题相同的变量 */
+    body: string;
 }
 
 // ==================== 自定义 API 规则 ====================
@@ -196,6 +216,7 @@ export interface PluginConfig {
  * - authExpireAt：授权到期时间戳（毫秒）
  * - settingsInitialized：是否已应用过全局初始设置（首次开机时置 true）
  * - features：本群功能开关（开启后独立于全局）
+ * - mailTemplate：本群邮件文案，留空的项沿用全局
  */
 export interface GroupConfig {
     /** 是否开机；关机时不处理该群任何后续功能 */
@@ -206,6 +227,11 @@ export interface GroupConfig {
     settingsInitialized?: boolean;
     /** 本群功能开关（已开启群以本字段为准） */
     features?: FeatureFlags;
+    /**
+     * 本群入群 / 退群邮件文案
+     * subject 或 body 留空表示该项用全局模板，不会发空白邮件
+     */
+    mailTemplate?: MailTemplate;
 }
 
 // ==================== Webhook ====================
