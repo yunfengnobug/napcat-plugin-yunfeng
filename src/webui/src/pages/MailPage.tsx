@@ -33,6 +33,9 @@ const EMPTY_MAIL: MailSettings = {
     fromName: '',
     subject: DEFAULT_MAIL_SUBJECT,
     body: DEFAULT_MAIL_BODY,
+    leaveSubject: DEFAULT_MAIL_SUBJECT,
+    leaveBody: DEFAULT_MAIL_BODY,
+    leaveFollowJoin: false,
 }
 
 /**
@@ -68,6 +71,9 @@ export default function MailPage() {
             fromName: next.fromName.trim(),
             subject: next.subject.trim() || DEFAULT_MAIL_SUBJECT,
             body: next.body.trim() || DEFAULT_MAIL_BODY,
+            leaveSubject: next.leaveSubject.trim() || DEFAULT_MAIL_SUBJECT,
+            leaveBody: next.leaveBody.trim() || DEFAULT_MAIL_BODY,
+            leaveFollowJoin: next.leaveFollowJoin === true,
         }
         setSaving(true)
         try {
@@ -234,25 +240,69 @@ export default function MailPage() {
             </div>
 
             <div className="card p-5 hover-lift">
-                <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">邮件文案</h3>
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">入群邮件文案</h3>
                 <p className="text-xs text-gray-400 mb-4 leading-relaxed">
-                    这是所有群的默认主题和正文。某个群在「群管理」里另写了主题或正文时，用该群的；留空的那一项仍用这里的全局文案。
+                    这是所有群的默认入群主题和正文。某个群在「群管理」里另写了入群主题或正文时，用该群的；留空的那一项仍用这里的全局入群文案。
                     把主题或正文清空后再保存，会恢复成最初那套文案，不会发出空白邮件。
                     未改过的默认主题里，群名最多显示 40 个字；主题一旦改成自己的文字，{'{{group_name}}'} 就是完整群名。
                 </p>
                 <div className="space-y-5">
                     <InputRow
-                        label="主题"
-                        desc="入群和退群共用这一条。入群、退群的差别用变量区分"
+                        label="入群主题"
+                        desc="有人入群时使用"
                         value={mail.subject}
                         onChange={(v) => updateMail({ subject: v })}
                     />
                     <TextAreaRow
-                        label="正文"
+                        label="入群正文"
                         desc="纯文本。换行会保留"
                         value={mail.body}
                         onChange={(v) => updateMail({ body: v })}
                     />
+                </div>
+            </div>
+
+            <div className="card p-5 hover-lift">
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">退群邮件文案</h3>
+                <p className="text-xs text-gray-400 mb-4 leading-relaxed">
+                    默认单独设置，和入群文案互不影响。初始文字与入群相同，发出去仍会写成退群，因为变量按这次事件替换。
+                    勾选后，退群改用上面的入群主题和正文，变量仍然按退群事件替换，例如 {'{{event_title}}'} 会是「退群通知」。
+                </p>
+                <label className="flex items-start gap-2 cursor-pointer mb-4">
+                    <input
+                        type="checkbox"
+                        className="mt-0.5 h-4 w-4 shrink-0 accent-[#FB7299]"
+                        checked={mail.leaveFollowJoin === true}
+                        onChange={(e) => updateMail({ leaveFollowJoin: e.target.checked })}
+                    />
+                    <span>
+                        <span className="text-sm font-medium text-gray-800 dark:text-gray-200">与入群邮件一致</span>
+                        <span className="block text-xs text-gray-400 mt-0.5">
+                            勾选后下面的退群主题和正文不参与发信。取消勾选可以再单独改，已经写过的退群文字会保留。
+                        </span>
+                    </span>
+                </label>
+                {mail.leaveFollowJoin === true ? (
+                    <p className="text-xs text-gray-400 leading-relaxed">
+                        当前退群邮件使用入群主题和正文。没有单独指定的群会跟着这里；群里也可以再勾选或取消。群自己写过的入群文案，会用在那个群的退群邮件里。
+                    </p>
+                ) : (
+                    <div className="space-y-5">
+                        <InputRow
+                            label="退群主题"
+                            desc="有人退群时使用。清空后保存会恢复成最初那套文案"
+                            value={mail.leaveSubject}
+                            onChange={(v) => updateMail({ leaveSubject: v })}
+                        />
+                        <TextAreaRow
+                            label="退群正文"
+                            desc="纯文本。换行会保留。清空后保存会恢复成最初那套文案"
+                            value={mail.leaveBody}
+                            onChange={(v) => updateMail({ leaveBody: v })}
+                        />
+                    </div>
+                )}
+                <div className="mt-5">
                     <MailVarsHint />
                 </div>
             </div>

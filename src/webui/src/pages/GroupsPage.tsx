@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { noAuthFetch } from '../utils/api'
 import { showToast } from '../hooks/useToast'
 import type { GroupInfo } from '../types'
@@ -371,62 +371,146 @@ export default function GroupsPage() {
     )
 }
 
+/** 本群「与入群邮件一致」：跟随全局，或只对本群勾选 / 取消 */
+type LeaveFollowMode = 'inherit' | 'yes' | 'no'
+
 /**
  * 本群邮件文案
- * 主题或正文留空表示用全局模板，保存空字符串不会发空白邮件
+ * 入群、退群分开。某一项留空表示用全局对应文案，保存空字符串不会发空白邮件
+ * 「与入群邮件一致」不指定时跟随全局；指定后只影响这个群
  */
 function GroupMailCopy({ group, onSave }: {
     group: GroupInfo
-    onSave: (template: { subject: string; body: string }, okMsg: string) => void
+    onSave: (template: {
+        subject: string
+        body: string
+        leaveSubject: string
+        leaveBody: string
+        leaveFollowJoin: boolean | null
+    }, okMsg: string) => void
 }) {
+    const initialMode = followModeOf(group.mailTemplate?.leaveFollowJoin)
     const [subject, setSubject] = useState(group.mailTemplate?.subject || '')
     const [body, setBody] = useState(group.mailTemplate?.body || '')
+    const [leaveSubject, setLeaveSubject] = useState(group.mailTemplate?.leaveSubject || '')
+    const [leaveBody, setLeaveBody] = useState(group.mailTemplate?.leaveBody || '')
+    const [mode, setMode] = useState<LeaveFollowMode>(initialMode)
 
     useEffect(() => {
         setSubject(group.mailTemplate?.subject || '')
         setBody(group.mailTemplate?.body || '')
-    }, [group.group_id, group.mailTemplate?.subject, group.mailTemplate?.body])
+        setLeaveSubject(group.mailTemplate?.leaveSubject || '')
+        setLeaveBody(group.mailTemplate?.leaveBody || '')
+        setMode(followModeOf(group.mailTemplate?.leaveFollowJoin))
+    }, [
+        group.group_id,
+        group.mailTemplate?.subject,
+        group.mailTemplate?.body,
+        group.mailTemplate?.leaveSubject,
+        group.mailTemplate?.leaveBody,
+        group.mailTemplate?.leaveFollowJoin,
+    ])
 
-    const usingGlobal = !subject.trim() && !body.trim()
+    const globalFollow = group.globalLeaveFollowJoin === true
+    // 勾选，或尚未指定且全局已勾选：退群主题和正文不参与发信，先藏起来
+    const followsJoin = mode === 'yes' || (mode === 'inherit' && globalFollow)
+    const usingGlobal = mode === 'inherit'
+        && !subject.trim() && !body.trim()
+        && !leaveSubject.trim() && !leaveBody.trim()
+
+    const payload = () => ({
+        subject: subject.trim(),
+        body: body.trim(),
+        leaveSubject: leaveSubject.trim(),
+        leaveBody: leaveBody.trim(),
+        leaveFollowJoin: mode === 'yes' ? true : mode === 'no' ? false : null,
+    })
+
+    const followHint = mode === 'yes'
+        ? '本群退群邮件使用本群入群主题和正文（留空的入群项仍用全局入群文案）。变量按退群事件替换，不会把退群写成入群。'
+        : mode === 'no'
+            ? '本群单独设置退群主题和正文。某一项留空则用全局退群文案，不会发空白邮件。'
+            : globalFollow
+                ? '尚未为本群单独指定。当前跟随全局：已勾选，退群使用入群文案，变量仍按退群事件替换。点击勾选框可只改本群。'
+                : '尚未为本群单独指定。当前跟随全局：未勾选，退群使用单独文案。下面留空的项用全局退群文案。'
 
     return (
         <div className="card p-5 space-y-4">
             <div>
                 <h4 className="text-sm font-semibold text-gray-900 dark:text-white">本群邮件文案</h4>
                 <p className="text-xs text-gray-400 mt-1 leading-relaxed">
-                    只影响这个群的入群和退群邮件。主题或正文留空，就用「邮件通知」页的全局文案，不会发出空白邮件。
+                    只影响这个群。入群和退群可以各写一套；某一项留空，就用「邮件通知」页的全局对应文案，不会发出空白邮件。
                     收件人仍然是成员自己的 QQ 邮箱（QQ号@qq.com）。
-                    {usingGlobal ? ' 当前两项都是空的，这个群使用全局文案。' : ''}
+                    {usingGlobal ? ' 当前没有本群覆盖，这个群使用全局文案。' : ''}
                 </p>
             </div>
             <label className="block">
-                <div className="text-sm font-medium text-gray-800 dark:text-gray-200 mb-1">主题</div>
-                <div className="text-xs text-gray-400 mb-2">留空则使用全局主题</div>
+                <div className="text-sm font-medium text-gray-800 dark:text-gray-200 mb-1">入群主题</div>
+                <div className="text-xs text-gray-400 mb-2">留空则使用全局入群主题</div>
                 <input
                     className="input-field"
-                    placeholder="留空则使用全局主题"
+                    placeholder="留空则使用全局入群主题"
                     value={subject}
                     onChange={(e) => setSubject(e.target.value)}
                 />
             </label>
             <label className="block">
-                <div className="text-sm font-medium text-gray-800 dark:text-gray-200 mb-1">正文</div>
-                <div className="text-xs text-gray-400 mb-2">留空则使用全局正文</div>
+                <div className="text-sm font-medium text-gray-800 dark:text-gray-200 mb-1">入群正文</div>
+                <div className="text-xs text-gray-400 mb-2">留空则使用全局入群正文</div>
                 <textarea
                     className="input-field min-h-[140px] resize-y"
-                    placeholder="留空则使用全局正文"
+                    placeholder="留空则使用全局入群正文"
                     value={body}
                     onChange={(e) => setBody(e.target.value)}
                 />
             </label>
+            <div className="rounded-lg border border-gray-100 dark:border-white/10 p-3 space-y-2">
+                <label className="flex items-start gap-2 cursor-pointer">
+                    <SameAsJoinCheckbox mode={mode} onMode={setMode} />
+                    <span>
+                        <span className="text-sm font-medium text-gray-800 dark:text-gray-200">与入群邮件一致</span>
+                        <span className="block text-xs text-gray-400 mt-0.5">{followHint}</span>
+                    </span>
+                </label>
+                {mode !== 'inherit' && (
+                    <button type="button" className="btn btn-ghost text-xs" onClick={() => setMode('inherit')}>
+                        这项改回跟随全局
+                    </button>
+                )}
+            </div>
+            {followsJoin ? (
+                <p className="text-xs text-gray-400 leading-relaxed">
+                    退群主题和正文现在不使用。取消勾选或改回跟随全局（且全局未勾选）后可以再单独写，已经填过的退群文字会保留。
+                </p>
+            ) : (
+                <>
+                    <label className="block">
+                        <div className="text-sm font-medium text-gray-800 dark:text-gray-200 mb-1">退群主题</div>
+                        <div className="text-xs text-gray-400 mb-2">留空则使用全局退群主题</div>
+                        <input
+                            className="input-field"
+                            placeholder="留空则使用全局退群主题"
+                            value={leaveSubject}
+                            onChange={(e) => setLeaveSubject(e.target.value)}
+                        />
+                    </label>
+                    <label className="block">
+                        <div className="text-sm font-medium text-gray-800 dark:text-gray-200 mb-1">退群正文</div>
+                        <div className="text-xs text-gray-400 mb-2">留空则使用全局退群正文</div>
+                        <textarea
+                            className="input-field min-h-[140px] resize-y"
+                            placeholder="留空则使用全局退群正文"
+                            value={leaveBody}
+                            onChange={(e) => setLeaveBody(e.target.value)}
+                        />
+                    </label>
+                </>
+            )}
             <MailVarsHint />
             <div className="flex flex-wrap gap-2">
                 <button
                     className="btn btn-primary text-xs"
-                    onClick={() => onSave(
-                        { subject: subject.trim(), body: body.trim() },
-                        subject.trim() || body.trim() ? '本群邮件文案已保存' : '已改回全局邮件文案',
-                    )}
+                    onClick={() => onSave(payload(), usingGlobal ? '已改回全局邮件文案' : '本群邮件文案已保存')}
                 >
                     保存本群文案
                 </button>
@@ -435,13 +519,48 @@ function GroupMailCopy({ group, onSave }: {
                     onClick={() => {
                         setSubject('')
                         setBody('')
-                        onSave({ subject: '', body: '' }, '已改回全局邮件文案')
+                        setLeaveSubject('')
+                        setLeaveBody('')
+                        setMode('inherit')
+                        onSave({
+                            subject: '',
+                            body: '',
+                            leaveSubject: '',
+                            leaveBody: '',
+                            leaveFollowJoin: null,
+                        }, '已改回全局邮件文案')
                     }}
                 >
                     清空并使用全局文案
                 </button>
             </div>
         </div>
+    )
+}
+
+function followModeOf(value: boolean | null | undefined): LeaveFollowMode {
+    if (value === true) return 'yes'
+    if (value === false) return 'no'
+    return 'inherit'
+}
+
+/** 三态勾选：未指定时为半选，点击后变成只对本群生效 */
+function SameAsJoinCheckbox({ mode, onMode }: {
+    mode: LeaveFollowMode
+    onMode: (mode: LeaveFollowMode) => void
+}) {
+    const ref = useRef<HTMLInputElement>(null)
+    useEffect(() => {
+        if (ref.current) ref.current.indeterminate = mode === 'inherit'
+    }, [mode])
+    return (
+        <input
+            ref={ref}
+            type="checkbox"
+            className="mt-0.5 h-4 w-4 shrink-0 accent-[#FB7299]"
+            checked={mode === 'yes'}
+            onChange={(e) => onMode(e.target.checked ? 'yes' : 'no')}
+        />
     )
 }
 

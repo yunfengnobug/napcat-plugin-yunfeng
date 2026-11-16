@@ -16,9 +16,16 @@ export const DEFAULT_MAIL: MailSettings = {
     password: '',
     from: '',
     fromName: '',
-    /** 与升级前写死的主题、正文相同，改之前行为不变 */
+    /**
+     * 与升级前写死的主题、正文相同
+     * 入群和退群各存一份，初始文字一样；发出去仍因入群/退群变量而不同
+     * 退群默认不跟随入群，避免改入群时把退群一起改掉
+     */
     subject: DEFAULT_MAIL_SUBJECT,
     body: DEFAULT_MAIL_BODY,
+    leaveSubject: DEFAULT_MAIL_SUBJECT,
+    leaveBody: DEFAULT_MAIL_BODY,
+    leaveFollowJoin: false,
 };
 
 /** 默认配置 */
@@ -80,6 +87,6 @@ export function buildConfigSchema(ctx: NapCatPluginContext): PluginConfigSchema 
         // Webhook 密钥（详细配置建议在插件自带 WebUI 中管理）
         ctx.NapCatConfig.text('webhookSecret', 'Webhook 密钥', '', '外部后台调用通知接口时需携带；建议在插件仪表盘配置页设置'),
         // 发信参数在插件页面里编辑；这里只提示收件人规则，避免把密码放进另一套表单
-        ctx.NapCatConfig.plainText('成员入群/退群邮件请到插件页面「邮件通知」填写 SMTP、发件人名称和邮件文案。各群可在「群管理」里单独覆盖文案。收件人是变动成员自己的 QQ 邮箱（QQ号@qq.com），不是固定管理员邮箱。')
+        ctx.NapCatConfig.plainText('成员入群/退群邮件请到插件页面「邮件通知」填写 SMTP、发件人名称和邮件文案。退群可以勾选「与入群邮件一致」，也可以单独写主题和正文。各群可在「群管理」里覆盖。收件人是变动成员自己的 QQ 邮箱（QQ号@qq.com），不是固定管理员邮箱。')
     );
 }

@@ -1,7 +1,10 @@
 /**
  * 入群 / 退群邮件的主题和正文
- * 全局有一份默认文案；群上的对应字段留空就用全局，不会因此发空白邮件。
+ * 全局的入群、退群各有一份文案。群上某一项留空就用全局对应项，不会因此发空白邮件。
+ * 「与入群邮件一致」勾选后，退群改用解析后的入群主题和正文，变量仍按退群事件替换。
  */
+
+import type { MailTemplate } from '../types';
 
 /** 和改模板之前的主题一致。群名在这份默认主题里仍只取前 40 个字 */
 export const DEFAULT_MAIL_SUBJECT = '【{{event_title}}】{{group_name}}';
@@ -44,30 +47,136 @@ export function cleanTemplateBody(value: unknown, limit = BODY_STORE_LIMIT): str
     return value.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim().slice(0, limit);
 }
 
+/** 解析时看的全局文案。留空会回退到内置默认，不会发空白邮件 */
+export interface GlobalMailCopy {
+    subject?: string;
+    body?: string;
+    leaveSubject?: string;
+    leaveBody?: string;
+    /** true：退群沿用入群文案。缺省或 false：退群单独用退群文案 */
+    leaveFollowJoin?: boolean;
+}
+
 /**
- * 群覆盖：两项都空则当作没有覆盖
- * 只填了主题或只填了正文时，另一项留给全局
+ * 补齐全局退群文案
+ * 旧配置没有退群字段时，把当时那套共用文案抄给退群，勾选保持关闭
+ * 已经单独存过退群文案或勾选时，不用入群文案覆盖退群；退群文字被清空则回到内置默认
  */
-export function normalizeGroupMailTemplate(raw: unknown): MailTemplateText | undefined {
+export function normalizeGlobalLeaveCopy<T extends GlobalMailCopy & {
+    subject: string;
+    body: string;
+    leaveSubject: string;
+    leaveBody: string;
+    leaveFollowJoin: boolean;
+}>(mail: T, raw: object): T {
+    const record = raw as Record<string, unknown>;
+    const hasLeaveSubject = 'leaveSubject' in record;
+    const hasLeaveBody = 'leaveBody' in record;
+    const hasLeaveFollow = 'leaveFollowJoin' in record;
+    if (!hasLeaveSubject && !hasLeaveBody && !hasLeaveFollow) {
+        return {
+            ...mail,
+            leaveFollowJoin: false,
+            leaveSubject: mail.subject,
+            leaveBody: mail.body,
+        };
+    }
+    return {
+        ...mail,
+        leaveFollowJoin: record.leaveFollowJoin === true,
+        leaveSubject: hasLeaveSubject
+            ? (cleanTemplateSubject(record.leaveSubject) || DEFAULT_MAIL_SUBJECT)
+            : mail.leaveSubject,
+        leaveBody: hasLeaveBody
+            ? (cleanTemplateBody(record.leaveBody) || DEFAULT_MAIL_BODY)
+            : mail.leaveBody,
+    };
+}
+
+/**
+ * 群覆盖
+ * 文本留空表示这一项沿用全局
+ * leaveFollowJoin 为 null 或缺省表示跟随全局勾选
+ */
+export interface GroupMailCopyOverride {
+    subject?: string;
+    body?: string;
+    leaveSubject?: string;
+    leaveBody?: string;
+    leaveFollowJoin?: boolean | null;
+}
+
+/**
+ * 群覆盖
+ * 入群、退群的主题和正文都空，且没有单独指定「与入群邮件一致」时，当作没有覆盖
+ * 只填了其中一项时，空着的那一项留给全局
+ * 旧配置只有 subject/body、没有退群字段时：把当时那套文案同时留给退群，并明确不跟随入群，
+ * 这样已保存的退群文字不会被改成另一套，之后勾上全局也不会把这份群覆盖盖掉
+ */
+export function normalizeGroupMailTemplate(raw: unknown): MailTemplate | undefined {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
     const record = raw as Record<string, unknown>;
     const subject = cleanTemplateSubject(record.subject);
     const body = cleanTemplateBody(record.body);
-    if (!subject && !body) return undefined;
-    return { subject, body };
+    const hasLeaveSubject = 'leaveSubject' in record;
+    const hasLeaveBody = 'leaveBody' in record;
+    const hasFollow = 'leaveFollowJoin' in record;
+
+    let leaveSubject = '';
+    let leaveBody = '';
+    let leaveFollowJoin: boolean | undefined;
+    if (!hasLeaveSubject && !hasLeaveBody && !hasFollow) {
+        if (subject || body) {
+            leaveSubject = subject;
+            leaveBody = body;
+            leaveFollowJoin = false;
+        }
+    } else {
+        if (hasLeaveSubject) leaveSubject = cleanTemplateSubject(record.leaveSubject);
+        if (hasLeaveBody) leaveBody = cleanTemplateBody(record.leaveBody);
+        if (record.leaveFollowJoin === true) leaveFollowJoin = true;
+        else if (record.leaveFollowJoin === false) leaveFollowJoin = false;
+    }
+
+    if (!subject && !body && !leaveSubject && !leaveBody && leaveFollowJoin === undefined) {
+        return undefined;
+    }
+
+    const template: MailTemplate = { subject, body, leaveSubject, leaveBody };
+    if (leaveFollowJoin !== undefined) template.leaveFollowJoin = leaveFollowJoin;
+    return template;
 }
 
 /**
+ * 选出这次发信要用的主题和正文
  * 群上留空的那一项回退到全局，全局也空则用内置默认文案
+ * 退群在勾选「与入群邮件一致」时，用的是解析后的入群文案（含本群入群覆盖），不是把变量写成入群
  */
 export function resolveMemberMailTemplate(
-    globalSubject: string,
-    globalBody: string,
-    override?: { subject?: string; body?: string } | null,
+    globalMail: GlobalMailCopy,
+    override?: GroupMailCopyOverride | null,
+    kind: 'join' | 'leave' = 'join',
 ): MailTemplateText {
+    const joinSubject = cleanTemplateSubject(override?.subject)
+        || cleanTemplateSubject(globalMail.subject)
+        || DEFAULT_MAIL_SUBJECT;
+    const joinBody = cleanTemplateBody(override?.body)
+        || cleanTemplateBody(globalMail.body)
+        || DEFAULT_MAIL_BODY;
+    if (kind !== 'leave') return { subject: joinSubject, body: joinBody };
+
+    const follow = typeof override?.leaveFollowJoin === 'boolean'
+        ? override.leaveFollowJoin
+        : globalMail.leaveFollowJoin === true;
+    if (follow) return { subject: joinSubject, body: joinBody };
+
     return {
-        subject: cleanTemplateSubject(override?.subject) || cleanTemplateSubject(globalSubject) || DEFAULT_MAIL_SUBJECT,
-        body: cleanTemplateBody(override?.body) || cleanTemplateBody(globalBody) || DEFAULT_MAIL_BODY,
+        subject: cleanTemplateSubject(override?.leaveSubject)
+            || cleanTemplateSubject(globalMail.leaveSubject)
+            || DEFAULT_MAIL_SUBJECT,
+        body: cleanTemplateBody(override?.leaveBody)
+            || cleanTemplateBody(globalMail.leaveBody)
+            || DEFAULT_MAIL_BODY,
     };
 }
 
