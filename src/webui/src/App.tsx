@@ -7,10 +7,11 @@ import ConfigPage from './pages/ConfigPage'
 import GlobalSettingsPage from './pages/GlobalSettingsPage'
 import GroupsPage from './pages/GroupsPage'
 import CustomApiPage from './pages/CustomApiPage'
+import MailPage from './pages/MailPage'
 import { useStatus } from './hooks/useStatus'
 import { useTheme } from './hooks/useTheme'
 
-export type PageId = 'status' | 'groups' | 'customApi' | 'global' | 'config'
+export type PageId = 'status' | 'groups' | 'customApi' | 'global' | 'config' | 'mail'
 
 const pageConfig: Record<PageId, { title: string; desc: string }> = {
     status: { title: '仪表盘', desc: '插件运行状态与数据概览' },
@@ -18,6 +19,7 @@ const pageConfig: Record<PageId, { title: string; desc: string }> = {
     groups: { title: '群管理', desc: '左侧选群，右侧配置授权、开机与功能' },
     customApi: { title: '自定义 API', desc: '触发词 → 请求外部接口 → 拼话术发送' },
     config: { title: 'Webhook 通知', desc: '推送地址、密钥与相关基础参数' },
+    mail: { title: '邮件通知', desc: '配置 SMTP。入群和退群邮件发给成员自己的 QQ 邮箱' },
 }
 
 function App() {
@@ -44,6 +46,7 @@ function App() {
             case 'customApi': return <CustomApiPage />
             case 'global': return <GlobalSettingsPage />
             case 'config': return <ConfigPage />
+            case 'mail': return <MailPage />
             default: return <StatusPage status={status} onRefresh={fetchStatus} />
         }
     }

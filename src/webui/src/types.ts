@@ -11,12 +11,35 @@ export interface PluginStatus {
         todayProcessed: number
         lastUpdateDay: string
         notifySent?: number
+        mailSent?: number
     }
+    /** 发信参数是否已经齐全（不含密码） */
+    mailReady?: boolean
 }
 
 export interface FeatureFlags {
     notify?: boolean
     customApi?: boolean
+    /** 入群时给该成员的 QQ 邮箱发信 */
+    mailJoin?: boolean
+    /** 退群时给该成员的 QQ 邮箱发信 */
+    mailLeave?: boolean
+}
+
+/** SMTP 加密方式 */
+export type MailEncryption = 'ssl' | 'starttls' | 'none'
+
+/**
+ * 发信配置
+ * 不包含固定收件人。入群 / 退群邮件发给成员自己的 QQ 邮箱（QQ号@qq.com）
+ */
+export interface MailSettings {
+    host: string
+    port: number
+    encryption: MailEncryption
+    username: string
+    password: string
+    from: string
 }
 
 export type CustomApiTriggerType = 'exact' | 'fuzzy' | 'regex'
@@ -119,7 +142,13 @@ export interface PluginConfig {
     featureDefaults: {
         notify: boolean
         customApi: boolean
+        mailJoin: boolean
+        mailLeave: boolean
     }
+    /** 发信参数。网页拿到的 password 永远是空的 */
+    mail?: MailSettings
+    /** 服务器是否已经保存了密码。留空保存表示不修改 */
+    mailPasswordSet?: boolean
     customApiRules?: CustomApiRule[]
     customApiOncePerMessage?: boolean
     groupConfigs?: Record<string, GroupConfig>
@@ -147,6 +176,8 @@ export interface GroupInfo {
     features: {
         notify: boolean
         customApi: boolean
+        mailJoin: boolean
+        mailLeave: boolean
     }
 }
 

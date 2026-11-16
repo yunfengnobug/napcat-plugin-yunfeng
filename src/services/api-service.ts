@@ -24,7 +24,21 @@ import type { OB11PostSendMsg } from 'napcat-types/napcat-onebot';
 import { pluginState, sanitizeCustomApiRule } from '../core/state';
 import { testCustomApiRule } from '../handlers/custom-api-handler';
 import type { CustomApiRule, FeatureFlags, GroupConfig, NotifyWebhookBody, PluginConfig } from '../types';
+import { getMailConfigError, sendTestMail } from './member-mail';
 import { extractNotifyRes, renderNotifyTemplate } from './notify-template';
+
+/**
+ * 给网页看的配置
+ * 密码不下发；用 mailPasswordSet 告诉页面「已经保存过密码，留空表示不改」
+ */
+function configForWeb(): PluginConfig & { mailPasswordSet: boolean } {
+    const mail = pluginState.config.mail;
+    return {
+        ...pluginState.config,
+        mail: { ...mail, password: '' },
+        mailPasswordSet: Boolean(mail.password),
+    };
+}
 
 /** 格式化授权到期时间展示 */
 function formatExpireAt(ts: number): string {
@@ -54,6 +68,8 @@ function buildGroupView(
         features: {
             notify: pluginState.getFeatureFlag(groupId, 'notify'),
             customApi: pluginState.getFeatureFlag(groupId, 'customApi'),
+            mailJoin: pluginState.getFeatureFlag(groupId, 'mailJoin'),
+            mailLeave: pluginState.getFeatureFlag(groupId, 'mailLeave'),
         },
     };
 }
@@ -72,6 +88,8 @@ function applyGroupPatch(groupId: string, body: Record<string, unknown>): GroupC
         const patch: FeatureFlags = {};
         if (typeof features.notify === 'boolean') patch.notify = features.notify;
         if (typeof features.customApi === 'boolean') patch.customApi = features.customApi;
+        if (typeof features.mailJoin === 'boolean') patch.mailJoin = features.mailJoin;
+        if (typeof features.mailLeave === 'boolean') patch.mailLeave = features.mailLeave;
         if (Object.keys(patch).length > 0) {
             // 改功能前若尚未初始化，先标记为已初始化（以本次写入为准）
             const cur = pluginState.getGroupConfig(groupId);
@@ -113,8 +131,9 @@ export function registerApiRoutes(ctx: NapCatPluginContext): void {
                 pluginName: ctx.pluginName,
                 uptime: pluginState.getUptime(),
                 uptimeFormatted: pluginState.getUptimeFormatted(),
-                config: pluginState.config,
+                config: configForWeb(),
                 stats: pluginState.stats,
+                mailReady: getMailConfigError(pluginState.config.mail) === null,
                 webhookPath: `/plugin/${ctx.pluginName}/api/webhook/notify`,
             },
         });
@@ -127,7 +146,7 @@ export function registerApiRoutes(ctx: NapCatPluginContext): void {
         res.json({
             code: 0,
             data: {
-                ...pluginState.config,
+                ...configForWeb(),
                 webhookPath: `/plugin/${ctx.pluginName}/api/webhook/notify`,
             },
         });
@@ -140,9 +159,18 @@ export function registerApiRoutes(ctx: NapCatPluginContext): void {
             if (!body) {
                 return res.status(400).json({ code: -1, message: '请求体为空' });
             }
-            // 避免前端把 webhookPath 等展示字段写回配置
-            const { webhookPath: _wp, stats: _st, ...rest } = body;
-            pluginState.updateConfig(rest as Partial<PluginConfig>);
+            // 避免前端把 webhookPath 等展示字段写回配置。
+            // 密码留空表示不修改；只有 clearMailPassword 才会清掉已保存的密码。
+            const {
+                webhookPath: _wp,
+                stats: _st,
+                mailPasswordSet: _mps,
+                clearMailPassword,
+                ...rest
+            } = body;
+            pluginState.updateConfig(rest as Partial<PluginConfig>, {
+                clearMailPassword: clearMailPassword === true,
+            });
             ctx.logger.info('配置已保存');
             res.json({ code: 0, message: 'ok' });
         } catch (err) {
@@ -342,6 +370,25 @@ export function registerApiRoutes(ctx: NapCatPluginContext): void {
         } catch (err) {
             ctx.logger.error('试跑自定义 API 失败:', err);
             res.status(500).json({ code: -1, message: String(err) });
+        }
+    });
+
+    /**
+     * 发送测试邮件
+     * Body: { to } 只用于这一次试发，不写入配置，也不是入群 / 退群的收件人
+     */
+    router.postNoAuth('/mail/test', async (req, res) => {
+        try {
+            const body = req.body as { to?: unknown } | undefined;
+            const to = typeof body?.to === 'string' ? body.to : '';
+            const result = await sendTestMail(ctx, to);
+            if (!result.ok) {
+                return res.status(400).json({ code: -1, message: result.message });
+            }
+            res.json({ code: 0, message: 'ok', data: { to: result.to } });
+        } catch (err) {
+            ctx.logger.error('测试邮件发送失败:', err);
+            res.status(500).json({ code: -1, message: '测试邮件发送失败，请查看日志' });
         }
     });
 

@@ -10,7 +10,7 @@
 // ==================== 功能开关 ====================
 
 /** 群聊业务功能键（后续新功能在此扩展） */
-export type FeatureKey = 'notify' | 'customApi';
+export type FeatureKey = 'notify' | 'customApi' | 'mailJoin' | 'mailLeave';
 
 /** 各功能开关 */
 export interface FeatureFlags {
@@ -18,6 +18,33 @@ export interface FeatureFlags {
     notify?: boolean;
     /** 自定义 API（消息触发后请求外部接口并拼话术发送） */
     customApi?: boolean;
+    /** 入群时给该成员的 QQ 邮箱发信 */
+    mailJoin?: boolean;
+    /** 退群时给该成员的 QQ 邮箱发信 */
+    mailLeave?: boolean;
+}
+
+/** SMTP 加密方式：隐式 TLS、STARTTLS、明文 */
+export type MailEncryption = 'ssl' | 'starttls' | 'none';
+
+/**
+ * 发信配置（只描述怎么把信送出去）
+ * 入群 / 退群的收件人不是这里配置的固定地址，而是成员自己的 QQ 邮箱（QQ号@qq.com）
+ * 密码只写在运行时配置文件里，不要写进仓库
+ */
+export interface MailSettings {
+    /** SMTP 主机 */
+    host: string;
+    /** 端口。SSL 常用 465，STARTTLS 常用 587，不加密常用 25 */
+    port: number;
+    /** 加密方式 */
+    encryption: MailEncryption;
+    /** 认证用户名；与密码同时为空则不认证 */
+    username: string;
+    /** 认证密码或授权码 */
+    password: string;
+    /** 发件人，邮箱地址或「名称 <邮箱>」 */
+    from: string;
 }
 
 // ==================== 自定义 API 规则 ====================
@@ -147,6 +174,11 @@ export interface PluginConfig {
      * 仅在群「首次开机」时写入该群作为初始值；之后改全局不影响已开启过的群
      */
     featureDefaults: Required<FeatureFlags>;
+    /**
+     * SMTP 发信参数
+     * 不包含固定收件人：入群 / 退群邮件发给成员 QQ 邮箱
+     */
+    mail: MailSettings;
     /** 自定义 API 规则列表（全局配置，群侧用功能开关控制是否响应） */
     customApiRules: CustomApiRule[];
     /**

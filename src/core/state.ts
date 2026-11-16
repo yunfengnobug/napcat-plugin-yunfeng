@@ -14,7 +14,7 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import type { NapCatPluginContext, PluginLogger } from 'napcat-types/napcat-onebot/network/plugin/types';
-import { DEFAULT_CONFIG } from '../config';
+import { DEFAULT_CONFIG, DEFAULT_MAIL } from '../config';
 import type {
     CustomApiBodyType,
     CustomApiExpectedCondition,
@@ -25,6 +25,8 @@ import type {
     FeatureFlags,
     FeatureKey,
     GroupConfig,
+    MailEncryption,
+    MailSettings,
     PluginConfig,
 } from '../types';
 
@@ -32,6 +34,42 @@ const HTTP_METHODS: CustomApiHttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DEL
 const BODY_TYPES: CustomApiBodyType[] = ['none', 'json', 'form', 'multipart', 'raw'];
 /** 单步请求默认超时（毫秒） */
 const DEFAULT_STEP_TIMEOUT_MS = 8000;
+
+const MAIL_ENCRYPTION: MailEncryption[] = ['ssl', 'starttls', 'none'];
+
+/** 清洗发信配置；密码原样保留（由调用方决定空密码是否沿用旧值） */
+function sanitizeMail(raw: unknown): MailSettings {
+    const mail: MailSettings = { ...DEFAULT_MAIL };
+    if (!isObject(raw)) return mail;
+
+    if (typeof raw.host === 'string') mail.host = raw.host.trim().slice(0, 253);
+    if (typeof raw.username === 'string') mail.username = raw.username.trim().slice(0, 320);
+    if (typeof raw.password === 'string') {
+        mail.password = raw.password.replace(/[\r\n]/g, '').slice(0, 256);
+    }
+    if (typeof raw.from === 'string') mail.from = raw.from.trim().slice(0, 320);
+
+    const portRaw = typeof raw.port === 'string' && raw.port.trim() ? Number(raw.port) : raw.port;
+    if (typeof portRaw === 'number' && Number.isFinite(portRaw)) {
+        const port = Math.floor(portRaw);
+        if (port >= 1 && port <= 65535) mail.port = port;
+    }
+
+    if (typeof raw.encryption === 'string' && MAIL_ENCRYPTION.includes(raw.encryption as MailEncryption)) {
+        mail.encryption = raw.encryption as MailEncryption;
+    }
+    return mail;
+}
+
+/** 已开机群迁移时，把缺失的功能项补成当时的全局初始值 */
+function snapshotFeatures(features: FeatureFlags | undefined, defaults: Required<FeatureFlags>): FeatureFlags {
+    return {
+        notify: features?.notify ?? defaults.notify,
+        customApi: features?.customApi ?? defaults.customApi,
+        mailJoin: features?.mailJoin ?? defaults.mailJoin,
+        mailLeave: features?.mailLeave ?? defaults.mailLeave,
+    };
+}
 
 // ==================== 配置清洗工具 ====================
 
@@ -215,6 +253,7 @@ function sanitizeConfig(raw: unknown): PluginConfig {
             ...DEFAULT_CONFIG,
             webhookSecret: generateWebhookSecret(),
             featureDefaults: { ...DEFAULT_CONFIG.featureDefaults },
+            mail: { ...DEFAULT_MAIL },
             customApiRules: [],
             customApiOncePerMessage: true,
             groupConfigs: {},
@@ -224,6 +263,7 @@ function sanitizeConfig(raw: unknown): PluginConfig {
     const out: PluginConfig = {
         ...DEFAULT_CONFIG,
         featureDefaults: { ...DEFAULT_CONFIG.featureDefaults },
+        mail: sanitizeMail(raw.mail),
         customApiRules: [],
         customApiOncePerMessage: true,
         groupConfigs: {},
@@ -254,6 +294,12 @@ function sanitizeConfig(raw: unknown): PluginConfig {
         }
         if (typeof raw.featureDefaults.customApi === 'boolean') {
             out.featureDefaults.customApi = raw.featureDefaults.customApi;
+        }
+        if (typeof raw.featureDefaults.mailJoin === 'boolean') {
+            out.featureDefaults.mailJoin = raw.featureDefaults.mailJoin;
+        }
+        if (typeof raw.featureDefaults.mailLeave === 'boolean') {
+            out.featureDefaults.mailLeave = raw.featureDefaults.mailLeave;
         }
     }
 
@@ -295,15 +341,18 @@ function sanitizeConfig(raw: unknown): PluginConfig {
                 if (typeof groupConfig.features.customApi === 'boolean') {
                     features.customApi = groupConfig.features.customApi;
                 }
+                if (typeof groupConfig.features.mailJoin === 'boolean') {
+                    features.mailJoin = groupConfig.features.mailJoin;
+                }
+                if (typeof groupConfig.features.mailLeave === 'boolean') {
+                    features.mailLeave = groupConfig.features.mailLeave;
+                }
                 cfg.features = features;
             }
             // 已开机但未标记：视为已开启过，用当前全局默认补全缺失功能项（仅迁移一次）
             if (cfg.poweredOn && !cfg.settingsInitialized) {
                 cfg.settingsInitialized = true;
-                cfg.features = {
-                    notify: cfg.features?.notify ?? out.featureDefaults.notify,
-                    customApi: cfg.features?.customApi ?? out.featureDefaults.customApi,
-                };
+                cfg.features = snapshotFeatures(cfg.features, out.featureDefaults);
             }
             out.groupConfigs[groupId] = cfg;
         }
@@ -322,6 +371,7 @@ class PluginState {
     config: PluginConfig = {
         ...DEFAULT_CONFIG,
         featureDefaults: { ...DEFAULT_CONFIG.featureDefaults },
+        mail: { ...DEFAULT_MAIL },
         groupConfigs: {},
     };
 
@@ -341,6 +391,8 @@ class PluginState {
         lastUpdateDay: new Date().toDateString(),
         /** Webhook 通知成功次数 */
         notifySent: 0,
+        /** 成员入群 / 退群邮件成功次数 */
+        mailSent: 0,
     };
 
     /** 获取上下文（确保已初始化） */
@@ -494,8 +546,10 @@ class PluginState {
 
     /**
      * 合并更新配置
+     * 发信密码留空时沿用已保存的密码，避免网页把脱敏后的空串写回去
+     * clearMailPassword 为 true 时才真正清空密码
      */
-    updateConfig(partial: Partial<PluginConfig>): void {
+    updateConfig(partial: Partial<PluginConfig>, options?: { clearMailPassword?: boolean }): void {
         const next = { ...this.config, ...partial };
         if (partial.featureDefaults) {
             next.featureDefaults = {
@@ -506,15 +560,33 @@ class PluginState {
         if (partial.groupConfigs) {
             next.groupConfigs = partial.groupConfigs;
         }
+        const mailPatch = partial.mail && typeof partial.mail === 'object' && !Array.isArray(partial.mail)
+            ? partial.mail
+            : null;
+        if (mailPatch || options?.clearMailPassword) {
+            const merged = sanitizeMail({ ...this.config.mail, ...(mailPatch || {}) });
+            if (options?.clearMailPassword) {
+                merged.password = '';
+            } else if (!merged.password) {
+                merged.password = this.config.mail.password;
+            }
+            next.mail = merged;
+        }
         this.config = sanitizeConfig(next);
         this.saveConfig();
     }
 
     /**
      * 完整替换配置
+     * 未带 mail 时保留原来的发信配置；带了 mail 但密码为空时，沿用已保存密码
      */
     replaceConfig(config: PluginConfig): void {
-        this.config = sanitizeConfig(config);
+        const hasMail = !!config && typeof config === 'object' && !!config.mail;
+        const mail = hasMail ? sanitizeMail(config.mail) : { ...this.config.mail };
+        if (!mail.password && this.config.mail.password) {
+            mail.password = this.config.mail.password;
+        }
+        this.config = sanitizeConfig({ ...config, mail });
         this.saveConfig();
     }
 
@@ -544,7 +616,7 @@ class PluginState {
             this.updateGroupConfig(groupId, {
                 poweredOn: true,
                 settingsInitialized: true,
-                features: { ...this.config.featureDefaults },
+                features: snapshotFeatures(undefined, this.config.featureDefaults),
             });
             return;
         }
@@ -668,6 +740,11 @@ class PluginState {
     incrementNotifySent(): void {
         this.stats.notifySent = (this.stats.notifySent || 0) + 1;
         this.incrementProcessed();
+    }
+
+    /** 增加成员邮件发送计数（不计入消息处理次数） */
+    incrementMailSent(): void {
+        this.stats.mailSent = (this.stats.mailSent || 0) + 1;
     }
 
     // ==================== 工具方法 ====================
