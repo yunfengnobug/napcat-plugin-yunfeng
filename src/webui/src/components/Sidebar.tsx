@@ -1,19 +1,16 @@
 import type { PageId } from '../App'
-import { IconDashboard, IconSettings, IconGroup, IconGithub, IconPlugin, IconSun, IconTerminal, IconMail } from './icons'
+import { IconDashboard, IconSettings, IconGroup, IconGithub, IconPlugin, IconSun } from './icons'
 
 interface SidebarProps {
     currentPage: PageId
     onPageChange: (page: PageId) => void
 }
 
-/** 菜单顺序：仪表盘 / 全局设置 / 群管理 固定前三，后续新功能只往后追加 */
+/** 侧栏只留结构页。Webhook、自定义 API、邮件的配置在对应功能开关后面的「配置」抽屉里 */
 const menuItems: { id: PageId; label: string; icon: React.ReactNode }[] = [
     { id: 'status', label: '仪表盘', icon: <IconDashboard size={18} /> },
     { id: 'global', label: '全局设置', icon: <IconSettings size={18} /> },
     { id: 'groups', label: '群管理', icon: <IconGroup size={18} /> },
-    { id: 'customApi', label: '自定义 API', icon: <IconTerminal size={18} /> },
-    { id: 'config', label: 'Webhook 通知', icon: <IconTerminal size={18} /> },
-    { id: 'mail', label: '邮件通知', icon: <IconMail size={18} /> },
 ]
 
 export default function Sidebar({ currentPage, onPageChange }: SidebarProps) {

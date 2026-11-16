@@ -4,6 +4,13 @@ import { showToast } from '../hooks/useToast'
 import type { GroupInfo } from '../types'
 import { IconSearch, IconRefresh, IconCheck, IconX } from '../components/icons'
 import MailVarsHint from '../components/MailVarsHint'
+import Drawer from '../components/Drawer'
+import FeatureToggleRow from '../components/FeatureToggleRow'
+import { WebhookSettingsPanel } from './ConfigPage'
+import CustomApiPage from './CustomApiPage'
+
+/** 群管理里点「配置」时打开的抽屉。邮件是本群文案；Webhook 和自定义 API 打开全局配置 */
+type GroupFeatureDrawer = 'webhook' | 'customApi' | 'mailJoin' | 'mailLeave'
 
 export default function GroupsPage() {
     const [groups, setGroups] = useState<GroupInfo[]>([])
@@ -13,6 +20,8 @@ export default function GroupsPage() {
     const [checked, setChecked] = useState<Set<number>>(new Set())
     const [authDays, setAuthDays] = useState('30')
     const [bulkDays, setBulkDays] = useState('30')
+    const [drawer, setDrawer] = useState<GroupFeatureDrawer | null>(null)
+    const closeDrawer = useCallback(() => setDrawer(null), [])
 
     const fetchGroups = useCallback(async () => {
         setLoading(true)
@@ -33,6 +42,9 @@ export default function GroupsPage() {
     }, [])
 
     useEffect(() => { fetchGroups() }, [fetchGroups])
+
+    // 换群时关掉抽屉，避免还停在上一个群的文案草稿上
+    useEffect(() => { setDrawer(null) }, [selectedId])
 
     const filtered = useMemo(() => {
         if (!search) return groups
@@ -107,6 +119,7 @@ export default function GroupsPage() {
     }
 
     return (
+        <>
         <div className="flex flex-col lg:flex-row gap-4 min-h-[520px]">
             {/* 左侧：群列表 */}
             <div className="w-full lg:w-[320px] shrink-0 flex flex-col gap-3">
@@ -247,7 +260,7 @@ export default function GroupsPage() {
                         {/* 基础：开机 / 授权 */}
                         <div className="card p-5 space-y-5">
                             <h4 className="text-sm font-semibold text-gray-900 dark:text-white">基础</h4>
-                            <ToggleRow
+                            <FeatureToggleRow
                                 label="开机状态"
                                 desc="关机时不处理该群任何后续功能；首次开机会写入「全局设置」中的功能初始值"
                                 checked={selected.poweredOn}
@@ -305,69 +318,115 @@ export default function GroupsPage() {
                             </div>
                         </div>
 
-                        {/* 功能区：每个功能一块，而不是表格一列 */}
+                        {/* 功能区：开关管本群开停，配置进抽屉，不再铺在群详情里 */}
                         <div className="card p-5 space-y-5">
                             <div>
                                 <h4 className="text-sm font-semibold text-gray-900 dark:text-white">功能</h4>
                                 <p className="text-xs text-gray-400 mt-1">
-                                    以下为本群独立设置。未开机前显示的是全局初始预览；开机后改「全局设置」不会再影响本群。
+                                    以下为本群独立开关。未开机前显示的是全局初始预览；开机后改「全局设置」里的开关不会再影响本群。
+                                    有参数的功能，点开关后面的「配置」。
                                 </p>
                             </div>
-                            <ToggleRow
+                            <FeatureToggleRow
                                 label="Webhook 通知"
-                                desc="开启后，外部 Webhook 通知会推送到本群（仍需已授权且开机）"
+                                desc="开启后，外部通知会推到本群（仍需已授权且开机）。地址、密钥和话术点右侧「配置」，那是所有群共用的"
                                 checked={selected.features.notify}
                                 onChange={(v) => patchGroup(
                                     selected.group_id,
                                     { features: { notify: v } },
                                     `Webhook 通知已${v ? '开启' : '关闭'}`
                                 )}
+                                onConfigure={() => setDrawer('webhook')}
                             />
-                            <ToggleRow
+                            <FeatureToggleRow
                                 label="自定义 API"
-                                desc="开启后，本群消息可按规则触发外部接口并回发话术"
+                                desc="开启后，本群消息可按规则触发外部接口并回发话术。规则点右侧「配置」，规则本身是全局的"
                                 checked={selected.features.customApi === true}
                                 onChange={(v) => patchGroup(
                                     selected.group_id,
                                     { features: { customApi: v } },
                                     `自定义 API 已${v ? '开启' : '关闭'}`
                                 )}
+                                onConfigure={() => setDrawer('customApi')}
                             />
-                            <ToggleRow
+                            <FeatureToggleRow
                                 label="入群邮件"
-                                desc="有人入群时，给该成员自己的 QQ 邮箱（QQ号@qq.com）发信。不会发给固定管理员。仍需本群已授权且开机，并在「邮件通知」里配好 SMTP"
+                                desc="有人入群时，给该成员自己的 QQ 邮箱（QQ号@qq.com）发信。点右侧「配置」写本群主题和正文。SMTP 在全局设置的入群邮件配置里"
                                 checked={selected.features.mailJoin === true}
                                 onChange={(v) => patchGroup(
                                     selected.group_id,
                                     { features: { mailJoin: v } },
                                     `入群邮件已${v ? '开启' : '关闭'}`
                                 )}
+                                onConfigure={() => setDrawer('mailJoin')}
                             />
-                            <ToggleRow
+                            <FeatureToggleRow
                                 label="退群邮件"
-                                desc="有人退群时，给该成员自己的 QQ 邮箱（QQ号@qq.com）发信。不会发给固定管理员。仍需本群已授权且开机，并在「邮件通知」里配好 SMTP"
+                                desc="有人退群时，给该成员自己的 QQ 邮箱（QQ号@qq.com）发信。点右侧「配置」写本群退群文案，或设置是否与入群邮件一致"
                                 checked={selected.features.mailLeave === true}
                                 onChange={(v) => patchGroup(
                                     selected.group_id,
                                     { features: { mailLeave: v } },
                                     `退群邮件已${v ? '开启' : '关闭'}`
                                 )}
+                                onConfigure={() => setDrawer('mailLeave')}
                             />
                         </div>
-
+                    </div>
+                )}
+            </div>
+        </div>
+        {selected && (
+            <>
+                <Drawer
+                    open={drawer === 'webhook'}
+                    title="Webhook 通知"
+                    description="本群开关只决定这个群收不收。下面是全局推送地址、密钥和话术。"
+                    badge="失焦后保存"
+                    onClose={closeDrawer}
+                >
+                    <div className="mb-4 rounded-lg border border-amber-200/60 dark:border-amber-500/20 bg-amber-50/80 dark:bg-amber-500/5 px-4 py-3 text-xs text-amber-800 dark:text-amber-200/90 leading-relaxed">
+                        本群没有单独的推送地址。下面改的是全局 Webhook，会作用到每一个开启了通知的群。
+                    </div>
+                    <WebhookSettingsPanel />
+                </Drawer>
+                <Drawer
+                    open={drawer === 'customApi'}
+                    title="自定义 API"
+                    description="本群开关只决定这个群会不会按规则响应。规则是全局的，改完请点「保存全部」。"
+                    wide
+                    onClose={closeDrawer}
+                >
+                    <div className="mb-4 rounded-lg border border-amber-200/60 dark:border-amber-500/20 bg-amber-50/80 dark:bg-amber-500/5 px-4 py-3 text-xs text-amber-800 dark:text-amber-200/90 leading-relaxed">
+                        规则不按群各存一份。可以在规则里选择发送到本群。关闭抽屉不会自动保存，请先点「保存全部」。
+                    </div>
+                    {drawer === 'customApi' && <CustomApiPage embedded />}
+                </Drawer>
+                <Drawer
+                    open={drawer === 'mailJoin' || drawer === 'mailLeave'}
+                    title={drawer === 'mailLeave' ? '退群邮件' : '入群邮件'}
+                    description={drawer === 'mailLeave'
+                        ? '只影响这个群的退群文案，以及是否与入群邮件一致。留空仍用全局退群文案。这里没有 SMTP。关闭前请先保存。'
+                        : '只影响这个群的入群主题和正文。留空表示用全局入群文案，不会发空白邮件。这里没有 SMTP。关闭前请先保存。'}
+                    onClose={closeDrawer}
+                >
+                    {(drawer === 'mailJoin' || drawer === 'mailLeave') && (
                         <GroupMailCopy
                             key={selected.group_id}
                             group={selected}
+                            section={drawer === 'mailLeave' ? 'leave' : 'join'}
+                            onOpenSection={(section) => setDrawer(section === 'leave' ? 'mailLeave' : 'mailJoin')}
                             onSave={(template, okMsg) => patchGroup(
                                 selected.group_id,
                                 { mailTemplate: template },
                                 okMsg,
                             )}
                         />
-                    </div>
-                )}
-            </div>
-        </div>
+                    )}
+                </Drawer>
+            </>
+        )}
+        </>
     )
 }
 
@@ -376,11 +435,14 @@ type LeaveFollowMode = 'inherit' | 'yes' | 'no'
 
 /**
  * 本群邮件文案
- * 入群、退群分开。某一项留空表示用全局对应文案，保存空字符串不会发空白邮件
+ * 入群、退群分两个抽屉。某一项留空表示用全局对应文案，保存空字符串不会发空白邮件
  * 「与入群邮件一致」不指定时跟随全局；指定后只影响这个群
+ * 两个抽屉共用这一份草稿，保存时入群和退群一起写入，避免只存一边把另一边清掉
  */
-function GroupMailCopy({ group, onSave }: {
+function GroupMailCopy({ group, section, onOpenSection, onSave }: {
     group: GroupInfo
+    section: 'join' | 'leave'
+    onOpenSection?: (section: 'join' | 'leave') => void
     onSave: (template: {
         subject: string
         body: string
@@ -435,86 +497,107 @@ function GroupMailCopy({ group, onSave }: {
                 : '尚未为本群单独指定。当前跟随全局：未勾选，退群使用单独文案。下面留空的项用全局退群文案。'
 
     return (
-        <div className="card p-5 space-y-4">
-            <div>
-                <h4 className="text-sm font-semibold text-gray-900 dark:text-white">本群邮件文案</h4>
-                <p className="text-xs text-gray-400 mt-1 leading-relaxed">
-                    只影响这个群。入群和退群可以各写一套；某一项留空，就用「邮件通知」页的全局对应文案，不会发出空白邮件。
-                    收件人仍然是成员自己的 QQ 邮箱（QQ号@qq.com）。
-                    {usingGlobal ? ' 当前没有本群覆盖，这个群使用全局文案。' : ''}
-                </p>
-            </div>
-            <label className="block">
-                <div className="text-sm font-medium text-gray-800 dark:text-gray-200 mb-1">入群主题</div>
-                <div className="text-xs text-gray-400 mb-2">留空则使用全局入群主题</div>
-                <input
-                    className="input-field"
-                    placeholder="留空则使用全局入群主题"
-                    value={subject}
-                    onChange={(e) => setSubject(e.target.value)}
-                />
-            </label>
-            <label className="block">
-                <div className="text-sm font-medium text-gray-800 dark:text-gray-200 mb-1">入群正文</div>
-                <div className="text-xs text-gray-400 mb-2">留空则使用全局入群正文</div>
-                <textarea
-                    className="input-field min-h-[140px] resize-y"
-                    placeholder="留空则使用全局入群正文"
-                    value={body}
-                    onChange={(e) => setBody(e.target.value)}
-                />
-            </label>
-            <div className="rounded-lg border border-gray-100 dark:border-white/10 p-3 space-y-2">
-                <label className="flex items-start gap-2 cursor-pointer">
-                    <SameAsJoinCheckbox mode={mode} onMode={setMode} />
-                    <span>
-                        <span className="text-sm font-medium text-gray-800 dark:text-gray-200">与入群邮件一致</span>
-                        <span className="block text-xs text-gray-400 mt-0.5">{followHint}</span>
-                    </span>
-                </label>
-                {mode !== 'inherit' && (
-                    <button type="button" className="btn btn-ghost text-xs" onClick={() => setMode('inherit')}>
-                        这项改回跟随全局
-                    </button>
-                )}
-            </div>
-            {followsJoin ? (
-                <p className="text-xs text-gray-400 leading-relaxed">
-                    退群主题和正文现在不使用。取消勾选或改回跟随全局（且全局未勾选）后可以再单独写，已经填过的退群文字会保留。
-                </p>
-            ) : (
+        <div className="space-y-4">
+            <p className="text-xs text-gray-400 leading-relaxed">
+                {section === 'join'
+                    ? '只影响这个群的入群主题和正文。留空就用全局设置里入群邮件的对应文案，不会发出空白邮件。'
+                    : '只影响这个群的退群文案，以及本群是否与入群邮件一致。留空就用全局退群文案，不会发出空白邮件。'}
+                收件人仍然是成员自己的 QQ 邮箱（QQ号@qq.com）。
+                {usingGlobal ? ' 当前没有本群覆盖，这个群使用全局文案。' : ''}
+            </p>
+            {onOpenSection && (
+                <button
+                    type="button"
+                    className="text-xs text-primary hover:underline"
+                    onClick={() => onOpenSection(section === 'join' ? 'leave' : 'join')}
+                >
+                    {section === 'join' ? '去配置退群文案' : '去配置入群文案'}
+                </button>
+            )}
+            {section === 'join' && (
                 <>
                     <label className="block">
-                        <div className="text-sm font-medium text-gray-800 dark:text-gray-200 mb-1">退群主题</div>
-                        <div className="text-xs text-gray-400 mb-2">留空则使用全局退群主题</div>
+                        <div className="text-sm font-medium text-gray-800 dark:text-gray-200 mb-1">入群主题</div>
+                        <div className="text-xs text-gray-400 mb-2">留空则使用全局入群主题</div>
                         <input
                             className="input-field"
-                            placeholder="留空则使用全局退群主题"
-                            value={leaveSubject}
-                            onChange={(e) => setLeaveSubject(e.target.value)}
+                            placeholder="留空则使用全局入群主题"
+                            value={subject}
+                            onChange={(e) => setSubject(e.target.value)}
                         />
                     </label>
                     <label className="block">
-                        <div className="text-sm font-medium text-gray-800 dark:text-gray-200 mb-1">退群正文</div>
-                        <div className="text-xs text-gray-400 mb-2">留空则使用全局退群正文</div>
+                        <div className="text-sm font-medium text-gray-800 dark:text-gray-200 mb-1">入群正文</div>
+                        <div className="text-xs text-gray-400 mb-2">留空则使用全局入群正文</div>
                         <textarea
                             className="input-field min-h-[140px] resize-y"
-                            placeholder="留空则使用全局退群正文"
-                            value={leaveBody}
-                            onChange={(e) => setLeaveBody(e.target.value)}
+                            placeholder="留空则使用全局入群正文"
+                            value={body}
+                            onChange={(e) => setBody(e.target.value)}
                         />
                     </label>
                 </>
             )}
+            {section === 'leave' && (
+                <>
+                    <div className="rounded-lg border border-gray-100 dark:border-white/10 p-3 space-y-2">
+                        <label className="flex items-start gap-2 cursor-pointer">
+                            <SameAsJoinCheckbox mode={mode} onMode={setMode} />
+                            <span>
+                                <span className="text-sm font-medium text-gray-800 dark:text-gray-200">与入群邮件一致</span>
+                                <span className="block text-xs text-gray-400 mt-0.5">{followHint}</span>
+                            </span>
+                        </label>
+                        {mode !== 'inherit' && (
+                            <button type="button" className="btn btn-ghost text-xs" onClick={() => setMode('inherit')}>
+                                这项改回跟随全局
+                            </button>
+                        )}
+                    </div>
+                    {followsJoin ? (
+                        <p className="text-xs text-gray-400 leading-relaxed">
+                            退群主题和正文现在不使用。取消勾选或改回跟随全局（且全局未勾选）后可以再单独写，已经填过的退群文字会保留。
+                        </p>
+                    ) : (
+                        <>
+                            <label className="block">
+                                <div className="text-sm font-medium text-gray-800 dark:text-gray-200 mb-1">退群主题</div>
+                                <div className="text-xs text-gray-400 mb-2">留空则使用全局退群主题</div>
+                                <input
+                                    className="input-field"
+                                    placeholder="留空则使用全局退群主题"
+                                    value={leaveSubject}
+                                    onChange={(e) => setLeaveSubject(e.target.value)}
+                                />
+                            </label>
+                            <label className="block">
+                                <div className="text-sm font-medium text-gray-800 dark:text-gray-200 mb-1">退群正文</div>
+                                <div className="text-xs text-gray-400 mb-2">留空则使用全局退群正文</div>
+                                <textarea
+                                    className="input-field min-h-[140px] resize-y"
+                                    placeholder="留空则使用全局退群正文"
+                                    value={leaveBody}
+                                    onChange={(e) => setLeaveBody(e.target.value)}
+                                />
+                            </label>
+                        </>
+                    )}
+                </>
+            )}
             <MailVarsHint />
+            <p className="text-xs text-gray-400 leading-relaxed">
+                保存会把入群和退群的本群文案一起写入。清空会同时清掉两边的覆盖，并让「与入群邮件一致」改回跟随全局。
+            </p>
             <div className="flex flex-wrap gap-2">
                 <button
+                    type="button"
                     className="btn btn-primary text-xs"
                     onClick={() => onSave(payload(), usingGlobal ? '已改回全局邮件文案' : '本群邮件文案已保存')}
                 >
                     保存本群文案
                 </button>
                 <button
+                    type="button"
                     className="btn btn-ghost text-xs"
                     onClick={() => {
                         setSubject('')
@@ -571,22 +654,5 @@ function Badge({ ok, yes, no }: { ok: boolean; yes: string; no: string }) {
         }`}>
             {ok ? yes : no}
         </span>
-    )
-}
-
-function ToggleRow({ label, desc, checked, onChange }: {
-    label: string; desc: string; checked: boolean; onChange: (v: boolean) => void
-}) {
-    return (
-        <div className="flex items-center justify-between gap-4">
-            <div className="min-w-0">
-                <div className="text-sm font-medium text-gray-800 dark:text-gray-200">{label}</div>
-                <div className="text-xs text-gray-400 mt-0.5">{desc}</div>
-            </div>
-            <label className="toggle shrink-0">
-                <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
-                <div className="slider" />
-            </label>
-        </div>
     )
 }

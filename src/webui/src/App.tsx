@@ -3,23 +3,17 @@ import Sidebar from './components/Sidebar'
 import Header from './components/Header'
 import ToastContainer from './components/ToastContainer'
 import StatusPage from './pages/StatusPage'
-import ConfigPage from './pages/ConfigPage'
 import GlobalSettingsPage from './pages/GlobalSettingsPage'
 import GroupsPage from './pages/GroupsPage'
-import CustomApiPage from './pages/CustomApiPage'
-import MailPage from './pages/MailPage'
 import { useStatus } from './hooks/useStatus'
 import { useTheme } from './hooks/useTheme'
 
-export type PageId = 'status' | 'groups' | 'customApi' | 'global' | 'config' | 'mail'
+export type PageId = 'status' | 'groups' | 'global'
 
 const pageConfig: Record<PageId, { title: string; desc: string }> = {
     status: { title: '仪表盘', desc: '插件运行状态与数据概览' },
-    global: { title: '全局设置', desc: '新群首次开机时写入的功能初始值' },
-    groups: { title: '群管理', desc: '左侧选群，右侧配置授权、开机、功能与邮件文案' },
-    customApi: { title: '自定义 API', desc: '触发词 → 请求外部接口 → 拼话术发送' },
-    config: { title: 'Webhook 通知', desc: '推送地址、密钥与相关基础参数' },
-    mail: { title: '邮件通知', desc: '配置 SMTP、发件人名称，以及入群和退群邮件文案。退群可勾选与入群一致。收件人是成员自己的 QQ 邮箱' },
+    global: { title: '全局设置', desc: '功能初始开关。点开关后面的「配置」改 Webhook、自定义 API 和邮件' },
+    groups: { title: '群管理', desc: '左侧选群，右侧设置授权、开机和功能。配置在开关后面的「配置」里' },
 }
 
 function App() {
@@ -43,10 +37,7 @@ function App() {
         switch (currentPage) {
             case 'status': return <StatusPage status={status} onRefresh={fetchStatus} />
             case 'groups': return <GroupsPage />
-            case 'customApi': return <CustomApiPage />
             case 'global': return <GlobalSettingsPage />
-            case 'config': return <ConfigPage />
-            case 'mail': return <MailPage />
             default: return <StatusPage status={status} onRefresh={fetchStatus} />
         }
     }
